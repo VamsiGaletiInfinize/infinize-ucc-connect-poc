@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "infinize_ucc_connect_poc",
+  "project_id": "287edda3-9812-4242-9bb8-fef52fb3073f"
+}
