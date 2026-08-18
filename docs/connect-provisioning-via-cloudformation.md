@@ -41,10 +41,7 @@ npm run cdk:deploy:connect
 Or through the accelerator pipeline, using the plain template:
 
 ```bash
-aws cloudformation deploy \
-  --template-file infrastructure/cloudformation/connect-instance.template.json \
-  --stack-name infinize-ucc-connect \
-  --region us-east-1
+aws cloudformation deploy \n  --template-file infrastructure/cloudformation/connect-instance.template.json \n  --stack-name infinize-ucc-connect \n  --region us-east-1
 ```
 
 The instance alias must be globally unique across all AWS accounts. It defaults to
@@ -90,26 +87,77 @@ So going through CloudFormation does **not** in itself bypass the SCP. The polic
 written as "humans denied, CloudFormation allowed" — it denied a CloudFormation-invoked
 principal outright.
 
-### The one question left
+### The accelerator route — one small permission away from being testable
 
-This test used the **CDK bootstrap** execution role. If `p-qocf1ngi` carries a principal
-exemption, it would be keyed to specific role ARNs — plausibly `AWSAccelerator-*` — and the
-CDK role would not match it.
+The test above used the **CDK bootstrap** execution role. If `p-qocf1ngi` carries a principal
+exemption it would be keyed to specific role ARNs — plausibly `AWSAccelerator-*` — which the
+CDK role would not match.
 
-That cannot be checked from a member account. We tried:
+We do not need to assume that role to test it. **CloudFormation can assume it for us**, if
+we pass it with `--role-arn`. And `AWSAccelerator-Deployment-Role` already trusts
+CloudFormation to do so:
 
-- `organizations:DescribePolicy` on `p-qocf1ngi` → `AccessDeniedException`
-- `sts:AssumeRole` into `AWSAccelerator-Deployment-Role` → `AccessDenied`
+```json
+{ "Effect": "Allow",
+  "Principal": { "Service": "cloudformation.amazonaws.com" },
+  "Action": "sts:AssumeRole" }
+```
 
-**So the remaining question is precisely this, for someone with management-account access:**
+The only thing stopping us is a missing permission on our own principal — **and it is a
+missing permission, not an SCP deny**:
 
-> Does SCP `p-qocf1ngi` exempt any principal from `iam:CreateServiceLinkedRole` — and if so,
-> which role ARNs?
+```
+is not authorized to perform: iam:PassRole
+on resource: arn:aws:iam::279078306711:role/AWSAccelerator-Deployment-Role
+because no identity-based policy allows the iam:PassRole action
+```
 
-If it exempts the accelerator execution role, deploy
-`infrastructure/cloudformation/connect-instance.template.json` through the accelerator
-pipeline and it should succeed. If it exempts nobody, the policy itself has to change and
-no deployment route will work — see [`scp-change-request.md`](./scp-change-request.md).
+### The ask — a three-line IAM policy
+
+Add this to the `ps-AWSINFZFullStackDevs-Dev` permission set, exactly as `iam:CreateRole`
+was added earlier:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Sid": "PassAcceleratorRoleToCloudFormation",
+    "Effect": "Allow",
+    "Action": "iam:PassRole",
+    "Resource": "arn:aws:iam::279078306711:role/AWSAccelerator-Deployment-Role",
+    "Condition": {
+      "StringEquals": { "iam:PassedToService": "cloudformation.amazonaws.com" }
+    }
+  }]
+}
+```
+
+The condition key restricts it tightly: the role can be handed to CloudFormation and to
+nothing else. It grants no ability to assume the role directly.
+
+Then this one command settles whether the accelerator route works:
+
+```bash
+aws cloudformation create-stack \
+  --stack-name infinize-ucc-connect \
+  --template-body file://infrastructure/cloudformation/connect-instance.template.json \
+  --role-arn arn:aws:iam::279078306711:role/AWSAccelerator-Deployment-Role \
+  --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
+```
+
+- **Stack succeeds** → the accelerator role is exempt from `p-qocf1ngi`. Done, no policy
+  change needed, and this becomes the supported way to provision Connect here.
+- **Fails on `p-qocf1ngi` again** → no principal is exempt, and the SCP itself must change.
+  See [`scp-change-request.md`](./scp-change-request.md).
+
+Either way it is a definitive answer for the cost of one permission and one command.
+
+### What we could not check ourselves
+
+- `organizations:DescribePolicy` on `p-qocf1ngi` → `AccessDeniedException` (member accounts
+  cannot read SCPs)
+- `sts:AssumeRole` into `AWSAccelerator-Deployment-Role` → `AccessDenied` (and unnecessary,
+  given the `PassRole` route above)
 
 ## Background — why the service-linked role matters
 

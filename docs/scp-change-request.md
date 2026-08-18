@@ -9,10 +9,14 @@ below; it is written to be actionable without reading the rest of this repositor
 > itself denied `iam:CreateServiceLinkedRole` by the same SCP `p-qocf1ngi`. Evidence in
 > [`connect-provisioning-via-cloudformation.md`](./connect-provisioning-via-cloudformation.md).
 >
-> The only untested variant is the **accelerator's own** execution role. If `p-qocf1ngi`
-> exempts specific role ARNs, that would work and no policy change is needed; we cannot
-> check, because member accounts cannot read SCPs. **Please check that first** — the request
-> below applies only if no principal is exempt.
+> **Before changing any policy, please try the cheaper thing.** The accelerator's own
+> execution role may already be exempt from `p-qocf1ngi`. We can test that without assuming
+> the role — CloudFormation can assume it for us — but our principal lacks `iam:PassRole` on
+> `AWSAccelerator-Deployment-Role`. That is a missing *identity* permission, not an SCP deny,
+> so it is grantable. The exact three-line policy and the single command that settles it are
+> in [`connect-provisioning-via-cloudformation.md`](./connect-provisioning-via-cloudformation.md).
+>
+> **The request below applies only if that test also fails on `p-qocf1ngi`.**
 
 ---
 
