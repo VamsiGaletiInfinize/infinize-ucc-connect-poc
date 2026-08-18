@@ -51,45 +51,82 @@ The instance alias must be globally unique across all AWS accounts. It defaults 
 `infinize-ucc-poc`; override with the `CONNECT_INSTANCE_ALIAS` environment variable in CDK,
 or edit `InstanceAlias` in the template.
 
-## What we are actually testing
+## TEST RESULT — CloudFormation was tried, and is also denied
 
-Creating the instance requires the Amazon Connect **service-linked role**
-(`AWSServiceRoleForAmazonConnect`). Confirmed absent — an IAM role search for "Connect"
-in `279078306711` returns zero matches.
+**Deployed 2026-08-18 in `279078306711`, `us-east-1`.** The stack reached
+`CREATE_FAILED` on `AWS::Connect::Instance` with an unhelpful message:
 
-Our developer principal cannot create it: SCP `p-qocf1ngi` explicitly denies
-`iam:CreateServiceLinkedRole`, and adding `iam:CreateRole` to the permission set did not
-help, because an SCP deny cannot be granted around.
+```
+Resource handler returned message: "Creating instance failed due to internal failure,
+please retry."  (HandlerErrorCode: null)
+```
 
-**The open question is whether the CloudFormation execution role is exempt from that SCP.**
-Deploying this stack answers it either way:
+That message is misleading — it is not an internal AWS fault and retrying does not help.
+CloudTrail shows what actually happened:
 
-| Outcome | Meaning | Next step |
+```json
+{
+  "userIdentity": {
+    "arn": ".../cdk-hnb659fds-cfn-exec-role-279078306711-us-east-1/AWSCloudFormation",
+    "invokedBy": "cloudformation.amazonaws.com"
+  },
+  "eventName": "CreateServiceLinkedRole",
+  "errorCode": "AccessDenied",
+  "errorMessage": "... is not authorized to perform: iam:CreateServiceLinkedRole on
+     resource: .../AWSServiceRoleForAmazonConnect_vBelN8CkwsMn0BKwlbLN with an explicit
+     deny in a service control policy:
+     arn:aws:organizations::698995614981:policy/o-308lhphlqp/service_control_policy/p-qocf1ngi"
+}
+```
+
+**Two things this establishes:**
+
+1. `connect:CreateInstance` itself is **permitted** for the CloudFormation execution role —
+   there was no denial on the Connect action. The stack got as far as creating the instance.
+2. `iam:CreateServiceLinkedRole` is **denied by the same SCP `p-qocf1ngi`**, for a principal
+   invoked by CloudFormation (`invokedBy: cloudformation.amazonaws.com`).
+
+So going through CloudFormation does **not** in itself bypass the SCP. The policy is not
+written as "humans denied, CloudFormation allowed" — it denied a CloudFormation-invoked
+principal outright.
+
+### The one question left
+
+This test used the **CDK bootstrap** execution role. If `p-qocf1ngi` carries a principal
+exemption, it would be keyed to specific role ARNs — plausibly `AWSAccelerator-*` — and the
+CDK role would not match it.
+
+That cannot be checked from a member account. We tried:
+
+- `organizations:DescribePolicy` on `p-qocf1ngi` → `AccessDeniedException`
+- `sts:AssumeRole` into `AWSAccelerator-Deployment-Role` → `AccessDenied`
+
+**So the remaining question is precisely this, for someone with management-account access:**
+
+> Does SCP `p-qocf1ngi` exempt any principal from `iam:CreateServiceLinkedRole` — and if so,
+> which role ARNs?
+
+If it exempts the accelerator execution role, deploy
+`infrastructure/cloudformation/connect-instance.template.json` through the accelerator
+pipeline and it should succeed. If it exempts nobody, the policy itself has to change and
+no deployment route will work — see [`scp-change-request.md`](./scp-change-request.md).
+
+## Background — why the service-linked role matters
+
+Creating a Connect instance requires `AWSServiceRoleForAmazonConnect`. Confirmed absent: an
+IAM role search for "Connect" in `279078306711` returns zero matches.
+
+Amazon Connect asks IAM to create that role on the caller's behalf during instance creation.
+Every route we have tried is refused at that step:
+
+| Route | Principal | Result |
 |---|---|---|
-| **Stack succeeds** | The CFN execution role is exempt. | Nothing further — take the outputs and carry on |
-| **Fails on `p-qocf1ngi` / `iam:CreateServiceLinkedRole`** | The SCP denies every principal, CloudFormation included | Only an Organizations administrator can move it — see [`scp-change-request.md`](./scp-change-request.md) |
-| **Fails on a different SCP or condition** | A different rule applies to the execution role | Send us the exact error; we will narrow the request |
+| CLI `create-instance` × 5 | Developer SSO role | `CREATION_FAILED` — SCP `p-qocf1ngi` |
+| Console wizard × 2 | Developer SSO role | Failed earlier, on the email channel's SES role |
+| **CDK / CloudFormation** | **CDK CFN execution role** | **`CREATE_FAILED` — SCP `p-qocf1ngi`** |
 
-Please capture the **exact** CloudFormation failure text, including the policy id. The
-distinction between an SCP deny and a missing identity-based permission determines whether
-this needs an org-level change or a routine grant, and the two error messages differ only
-in a short clause:
-
-- `with an explicit deny in a service control policy: <policy-id>` → SCP
-- `because no identity-based policy allows the ... action` → permission, grantable
-
-## Note on the CDK bootstrap role
-
-Deploying the sibling data-plane stack (`InfinizeUccPocStack`) already failed under the CDK
-bootstrap execution role `cdk-hnb659fds-cfn-exec-role-279078306711-us-east-1`, denied by SCP
-`p-44cydhdk` for `dynamodb:CreateTable`, `logs:CreateLogGroup` and
-`secretsmanager:CreateSecret`.
-
-So if you deploy via `npm run cdk:deploy:connect`, it runs under **that same role** and may
-well be denied for the same reason — which would tell us about `p-44cydhdk`, not about
-Connect. **To test the accelerator path properly, deploy the plain template under the
-accelerator's own execution role.** That is the configuration we have not yet been able to
-try.
+Adding `iam:CreateRole` to the permission set addressed the identity-based half and changed
+nothing, because an SCP deny cannot be granted around.
 
 ## After the instance exists
 

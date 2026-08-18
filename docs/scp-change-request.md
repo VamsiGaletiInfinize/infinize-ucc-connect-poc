@@ -3,12 +3,16 @@
 Ready to send to whoever administers AWS Organizations for Infinize. Copy from the line
 below; it is written to be actionable without reading the rest of this repository.
 
-> **Try this first.** Infinize guidance is that IAM roles here should be created by
-> CloudFormation under an approved execution role rather than by a human. If the accelerator
-> pipeline's execution role is exempt from the SCP, **no policy change is needed at all** —
-> see [`connect-provisioning-via-cloudformation.md`](./connect-provisioning-via-cloudformation.md),
-> which ships a ready-to-deploy template. Send the request below only if that deploy also
-> fails on `p-qocf1ngi`.
+> **CloudFormation has now been tried, and is also denied.** Following the guidance that IAM
+> roles here should be created by CloudFormation rather than by a human, we built a
+> CloudFormation stack and deployed it. CloudTrail shows the CloudFormation execution role
+> itself denied `iam:CreateServiceLinkedRole` by the same SCP `p-qocf1ngi`. Evidence in
+> [`connect-provisioning-via-cloudformation.md`](./connect-provisioning-via-cloudformation.md).
+>
+> The only untested variant is the **accelerator's own** execution role. If `p-qocf1ngi`
+> exempts specific role ARNs, that would work and no policy change is needed; we cannot
+> check, because member accounts cannot read SCPs. **Please check that first** — the request
+> below applies only if no principal is exempt.
 
 ---
 
@@ -40,6 +44,37 @@ later. The role does not pre-exist in either account, and it cannot be created f
 reason.
 
 **Scope of testing**
+
+We have tried every route available to us, including the CloudFormation route the platform
+team recommended:
+
+| Route | Principal | Outcome |
+|---|---|---|
+| CLI `create-instance` × 5, two accounts | Developer SSO role | SCP `p-qocf1ngi` deny |
+| Console wizard × 2 | Developer SSO role | Blocked earlier on the email channel's SES role |
+| CloudFormation / CDK stack | CDK CFN execution role | **SCP `p-qocf1ngi` deny** (CloudTrail) |
+
+The CloudFormation result is the important one — it shows the policy is not written as
+"humans denied, automation allowed". The denied call was made with
+`invokedBy: cloudformation.amazonaws.com`:
+
+```
+User: .../cdk-hnb659fds-cfn-exec-role-279078306711-us-east-1/AWSCloudFormation
+is not authorized to perform: iam:CreateServiceLinkedRole
+on resource: .../AWSServiceRoleForAmazonConnect_vBelN8CkwsMn0BKwlbLN
+with an explicit deny in a service control policy: ...p-qocf1ngi
+```
+
+Note that `connect:CreateInstance` itself was permitted — only the service-linked role is
+blocked. CloudFormation surfaces this as a misleading
+`"Creating instance failed due to internal failure, please retry."`; the real cause is only
+visible in CloudTrail.
+
+**The question we cannot answer ourselves:** does `p-qocf1ngi` exempt any principal (for
+example `AWSAccelerator-*`) from `iam:CreateServiceLinkedRole`? If it does, deploying our
+template through the accelerator pipeline solves this with no policy change. We cannot read
+the policy from a member account (`organizations:DescribePolicy` → `AccessDeniedException`)
+and cannot assume the accelerator role (`sts:AssumeRole` → `AccessDenied`).
 
 Five CLI instance attempts across two accounts — `279078306711` (Dev) and `575838736153`
 (Test) — all `CREATION_FAILED`. We also called `iam:CreateServiceLinkedRole` directly,

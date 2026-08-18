@@ -34,9 +34,24 @@ instance creation. With that denied, `create-instance` returns an id and then tr
 to `CREATION_FAILED` a few seconds later. The role does not pre-exist in either account and
 cannot be created for the same reason.
 
-**Attempts:** five instances across two accounts, all `CREATION_FAILED`, with and without
-inbound/outbound flags. `iam:CreateServiceLinkedRole` was also tested directly, independent
-of Connect, in both accounts — denied identically.
+**Attempts:** five CLI instances across two accounts, all `CREATION_FAILED`, with and
+without inbound/outbound flags. `iam:CreateServiceLinkedRole` was also tested directly,
+independent of Connect, in both accounts — denied identically. Two console attempts failed
+earlier still, on the email channel's SES role.
+
+**CloudFormation was also tried, and is also denied.** A CDK stack creating
+`AWS::Connect::Instance` reached `CREATE_FAILED`; CloudTrail shows the CloudFormation
+execution role denied `iam:CreateServiceLinkedRole` by the same SCP, with
+`invokedBy: cloudformation.amazonaws.com`. So the policy does not distinguish humans from
+automation. Note `connect:CreateInstance` itself was permitted — only the service-linked
+role is blocked — and CloudFormation reports this as
+`"Creating instance failed due to internal failure, please retry."`, which is misleading;
+the real cause appears only in CloudTrail.
+
+**Untested:** whether `p-qocf1ngi` exempts specific principals such as `AWSAccelerator-*`.
+Member accounts cannot read SCPs (`organizations:DescribePolicy` → `AccessDeniedException`)
+nor assume the accelerator roles (`sts:AssumeRole` → `AccessDenied`). This is now the single
+open question.
 
 **Remediation — any one of:**
 
