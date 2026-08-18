@@ -10,21 +10,63 @@ concluded Vapi is genuinely ahead** ([comparison](./vapi-twilio-vs-connect.md)).
 Sonic closes that gap without leaving AWS, it removes the strongest argument for keeping
 Vapi.
 
-## Status of this assessment
+## Results — measured, not assumed
 
-| Question | Status |
+Executed against live Bedrock in account `279078306711` via
+[`scripts/nova-sonic-spike.ts`](../scripts/nova-sonic-spike.ts).
+
+| Question | Result |
 |---|---|
-| Is the model available in our account? | **Confirmed** — enumerated in Bedrock |
-| Does it preserve server-side tool authorization? | **Unverified** — spike written, not yet run |
-| Time to first audio byte | **Unmeasured** |
-| Native Amazon Connect integration path | **Uncertain** — see the caveat below |
+| Available in our account? | **Yes** — `amazon.nova-sonic-v1:0` and `amazon.nova-2-sonic-v1:0` |
+| Server-side tool use? | **Yes — on `nova-2-sonic` only.** `nova-sonic-v1` never emitted a tool request across three runs |
+| Does the authorization gate still hold? | **Yes — proven end to end** |
+| Time to first audio (no tool call) | **433 ms** after the caller stops speaking |
+| Time to first audio (with tool round-trip) | **1109 ms**, including our server-side adjudication |
+| Transcript usable for the UCC timeline? | **Yes** — per-role text output, caller ASR and assistant separately |
+| Barge-in primitives? | **Yes** — `userSpeechStart` / `userSpeechEnd` events |
+| Native Amazon Connect integration path | **Still uncertain** — see the caveat below |
 
-[`scripts/nova-sonic-spike.ts`](../scripts/nova-sonic-spike.ts) answers the first three in
-one run. It synthesizes a caller utterance with Polly, opens the bidirectional stream,
-hands the model our real `get_application_status` tool, and routes any resulting tool
-request through the real authorization gate. It has **not been executed** — every attempt
-coincided with an expired session token. Do not treat anything below marked *unverified* as
-evidence.
+### The decisive result
+
+The complete loop ran in speech-to-speech, with no text channel anywhere:
+
+```
+caller audio ("what is the status of my application APP2026001?")
+    -> Nova Sonic ASR + reasoning
+    -> toolUse: get_application_status({"applicationId":"APP2026001"})
+    -> OUR server-side gate, reading persisted state
+    -> DENY (NOT_VERIFIED)
+    -> model speaks the refusal back as audio
+```
+
+The model asked, the gate refused, and the model relayed the refusal without ever receiving
+the data. **The security property of ADR-0002 survives the move to speech-to-speech**, because
+the gate never cared which model was asking.
+
+### Version difference matters
+
+`nova-sonic-v1` did not emit a tool request in any run, including one where the caller spoke
+the application ID aloud and the prompt instructed the model to call the tool. `nova-2-sonic`
+did so immediately. **Use `nova-2-sonic-v1:0`.** On v1, every protected flow would have to
+leave the voice channel — which would have been disqualifying.
+
+### One caution from the transcript
+
+Having been refused, the model improvised its own verification procedure, asking for full
+name, date of birth, contact number and email. That is **not** our verification flow, which
+is a one-time passcode. No protected data leaked and the gate held, so this is a
+prompt-engineering gap rather than a security hole — but it shows that a speech-to-speech
+model left to fill silence will invent plausible-sounding process. Production use needs the
+tool's refusal message to state the remediation explicitly, as the Converse path already
+does.
+
+### A methodology note
+
+An early version of this spike told the model in its system prompt that the caller was
+unverified. The model then declined conversationally and never called the tool — which would
+have read as "Nova Sonic does not support tool use". The prompt was leaking the answer. The
+current version withholds verification status so the model must consult the tool to learn
+anything. Worth remembering when interpreting any negative result from this harness.
 
 ## The finding that matters most, and it is not voice quality
 
@@ -58,10 +100,10 @@ and `IdentityService`, which read persisted state and know nothing about which m
 requests does not touch the gate. The spike asserts this explicitly rather than assuming it:
 it puts an unverified caller through the real gate and requires a `DENY`.
 
-The open question is not whether the gate works — it is whether Nova Sonic emits tool
-requests at all in speech-to-speech mode. If it does not, Nova Sonic is limited to public
-FAQ, and every protected flow would have to hand off to the text path mid-call. That would
-be disqualifying for our use case, where verification and application lookup are the point.
+This is now **verified rather than argued**: the spike run above shows `nova-2-sonic`
+emitting a tool request and our gate refusing it, in a conversation that never left audio.
+Note that this holds only on `nova-2-sonic` — on `nova-sonic-v1` the model never called the
+tool, which would have limited it to public FAQ.
 
 **It does not unblock the Amazon Connect evaluation.** Nova Sonic improves the AI leg. The
 reason to choose Connect is the contact-centre leg — queues, routing profiles, agent state,
@@ -87,15 +129,18 @@ By contrast, Vapi's entire product is this integration, pre-built.
 
 ## Recommendation
 
-Run the spike as soon as a working session token is available — it is about two minutes and
-resolves the decisive question. Sequence the decisions in this order:
+On the evidence: **Nova Sonic (v2) is a credible AWS-native answer to the voice-quality gap.**
+Sub-second first audio, working server-side tool use, per-role transcripts and barge-in
+primitives — the things that made Vapi feel ahead — are present and measured.
 
-1. **Unblock Amazon Connect** (SCP `p-qocf1ngi`). Still by far the highest value; nothing
-   here displaces it.
-2. **Run the Nova Sonic spike.** If tool use works and time-to-first-audio is competitive,
-   the voice-quality argument for Vapi largely dissolves.
-3. **Confirm the Connect integration path** against current AWS documentation before
-   estimating effort.
+That materially weakens, though does not by itself settle, the strongest remaining argument
+for keeping Vapi. Two things still stand between this and a recommendation:
 
-Only after those three does a platform recommendation on the voice leg rest on evidence
-rather than on reasoning.
+1. **Unblock Amazon Connect** (SCP `p-qocf1ngi`). Unchanged as the highest-value action.
+   Nova Sonic improves the AI leg; it says nothing about queues, routing or agent state.
+2. **Confirm the Connect ↔ Nova Sonic integration path** against current AWS documentation.
+   If it is still Kinesis Video Streams rather than native, the integration effort is
+   material and partly offsets the latency advantage measured here.
+
+The architectural cost above — long-lived stateful streams instead of stateless turns —
+applies regardless, and should be priced into any adoption decision.

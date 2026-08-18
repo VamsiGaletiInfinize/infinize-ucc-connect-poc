@@ -270,7 +270,13 @@ The conclusion above credits Vapi with a real lead on conversational voice quali
 Nova Sonic, a speech-to-speech model already available in our Bedrock account, is the
 AWS-native answer to that gap.
 
-It is **not yet measured** — see [nova-sonic-assessment.md](./nova-sonic-assessment.md) for
-what would need to be true, the decisive question (does it support server-side tool use?),
-and the architectural cost it carries (long-lived stateful streams instead of stateless
-turns). Until the spike runs, the voice-quality row in the comparison stands as written.
+It has now been **measured** ([nova-sonic-assessment.md](./nova-sonic-assessment.md)):
+**433 ms** to first audio after the caller stops speaking, working server-side tool use, and
+per-role transcripts — with our authorization gate refusing an unverified caller mid-call,
+in a conversation that never left audio.
+
+That closes most of the gap this comparison credited to Vapi, without leaving AWS. Three
+qualifications: it works only on `nova-2-sonic-v1:0` (v1 never called the tool); it requires
+long-lived stateful streams rather than our current stateless turns, which rules out Lambda;
+and the Amazon Connect integration path is not yet confirmed. The voice-quality row should be
+read as **narrowing, on evidence** rather than settled.
