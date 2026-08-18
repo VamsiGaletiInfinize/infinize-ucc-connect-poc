@@ -4,6 +4,36 @@ For the Infinize platform team. This replaces the earlier request to relax an SC
 human principal, following the guidance that **IAM roles in this organisation should be
 created by CloudFormation under an approved execution role, not manually.**
 
+## Route matrix — every path tried, and what blocks it
+
+Two blocker types, and the difference decides who can fix it:
+
+- **SCP deny** — `with an explicit deny in a service control policy: <id>`. Cannot be
+  granted around. Only an Organizations administrator in `698995614981` can move it.
+- **Missing permission** — `because no identity-based policy allows the <action> action`.
+  A routine identity-policy grant; your own platform team can do it.
+
+| # | Route | Executing principal | Blocked on | Type | Fixable by |
+|---|---|---|---|---|---|
+| 1 | CLI `connect create-instance` (×5, 2 accounts) | Developer SSO role | `iam:CreateServiceLinkedRole` | **SCP `p-qocf1ngi`** | Org admin |
+| 2 | Console wizard (×2) | Developer SSO role | `iam:CreateRole` on `AmazonConnectEmailSESAccessRole` | Missing permission | Platform team — but pointless, route 1's wall sits behind it |
+| 3 | **CDK** `cdk deploy` | `cdk-hnb659fds-cfn-exec-role-*` | `iam:CreateServiceLinkedRole` | **SCP `p-qocf1ngi`** | Org admin |
+| 4 | **CloudFormation**, no `--role-arn` | Developer SSO role (caller) | `iam:CreateServiceLinkedRole` | **SCP `p-qocf1ngi`** | Org admin |
+| 5 | **CloudFormation**, `--role-arn AWSAccelerator-Deployment-Role` | Accelerator role | `iam:PassRole` — we cannot hand the role over | **Missing permission** | **Platform team** |
+
+Route 5 is the only one whose blocker is grantable, and it is the only one whose outcome is
+still unknown. Everything behind that permission is untested.
+
+Note on route 3: `connect:CreateInstance` itself was **permitted** for the CDK execution
+role. The stack reached instance creation and failed only on the service-linked role. The
+SCP is not banning Amazon Connect broadly — one IAM action stands in the way.
+
+Note on route 4: inferred, not executed. Without `--role-arn` CloudFormation acts with the
+caller's permissions, and that principal's `iam:CreateServiceLinkedRole` was denied directly
+twice and across five CLI attempts. Running it would add nothing.
+
+---
+
 ## What we need
 
 One Amazon Connect instance, voice only, plus the queues and routing profiles the POC
