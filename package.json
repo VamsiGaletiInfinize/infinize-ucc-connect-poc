@@ -40,6 +40,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@aws-sdk/client-polly": "^3.1112.0",
     "@types/node": "^22.10.2",
     "playwright": "^1.62.1",
     "tsx": "^4.19.2",

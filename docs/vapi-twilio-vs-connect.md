@@ -261,3 +261,16 @@ processor is materially easier to defend to a university's information-security 
 one number, and re-run the nine demo scenarios over real telephony with
 `UCC_TELEPHONY=connect`. That is a small amount of work and it converts the largest
 **[Assessed]** column in this document into **[Demonstrated]**.
+
+---
+
+## Addendum — the voice-quality gap may be closable inside AWS
+
+The conclusion above credits Vapi with a real lead on conversational voice quality. Amazon
+Nova Sonic, a speech-to-speech model already available in our Bedrock account, is the
+AWS-native answer to that gap.
+
+It is **not yet measured** — see [nova-sonic-assessment.md](./nova-sonic-assessment.md) for
+what would need to be true, the decisive question (does it support server-side tool use?),
+and the architectural cost it carries (long-lived stateful streams instead of stateless
+turns). Until the spike runs, the voice-quality row in the comparison stands as written.
