@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createHarness, PHONE, startCall, verifyCall, type TestHarness } from '../helpers.ts';
+import { summariseCallLoad } from '../../apps/ucc-api/src/routes/operations.ts';
 
 describe('contact lifecycle', () => {
   let h: TestHarness;
@@ -353,5 +354,80 @@ describe('application service', () => {
     const view = await h.applications.getStatusForContact(ctx, 'APP-2026-001');
     expect(JSON.stringify(view)).not.toContain('Shortlisted for departmental review');
     expect((view as unknown as Record<string, unknown>).notes).toBeUndefined();
+  });
+});
+
+describe('supervisor floor metrics', () => {
+  let h: TestHarness;
+
+  beforeEach(async () => {
+    h = await createHarness();
+  });
+
+  /**
+   * Regression: a call assigned to an agent but not yet accepted was counted as "waiting in
+   * queue" on the supervisor dashboard, while the per-queue table showed zero waiting. The
+   * two panels disagreed on screen because they measured different things.
+   */
+  it('counts an assigned-but-unaccepted call as ringing, not waiting', async () => {
+    const { call, ticket } = await startCall(h, PHONE.applicantTwoApps, 'floor1');
+
+    const result = await h.routing.escalate({
+      tenantId: h.tenantId,
+      uccCallId: call.id,
+      uccTicketId: ticket.id,
+      category: 'ADMISSIONS_SUPPORT',
+      reason: 'wants an admissions officer',
+      traceId: call.traceId,
+    });
+    expect(result.ticket.status).toBe('AGENT_ASSIGNED');
+
+    const assigned = await h.calls.get(h.tenantId, call.id);
+    // The call legitimately remains QUEUED until the agent accepts...
+    expect(assigned.status).toBe('QUEUED');
+    expect(assigned.agentId).toBeTruthy();
+
+    // ...but it is ringing at an agent, not waiting for one.
+    const load = summariseCallLoad([assigned]);
+    expect(load.waitingCalls).toBe(0);
+    expect(load.ringingCalls).toBe(1);
+
+    // And it agrees with the per-queue table, which counts QUEUED_FOR_AGENT tickets.
+    const queues = await h.routing.queueSnapshot(h.tenantId);
+    const admissions = queues.find((q) => q.code === 'ADMISSIONS')!;
+    expect(admissions.waiting).toBe(0);
+    expect(load.waitingCalls).toBe(admissions.waiting);
+
+    // After acceptance the call moves to the agent bucket.
+    await h.agents.acceptTicket({
+      tenantId: h.tenantId,
+      ticketId: ticket.id,
+      agentId: result.agent!.id,
+    });
+    const accepted = await h.calls.get(h.tenantId, call.id);
+    const afterAccept = summariseCallLoad([accepted]);
+    expect(afterAccept.agentCalls).toBe(1);
+    expect(afterAccept.ringingCalls).toBe(0);
+    expect(afterAccept.waitingCalls).toBe(0);
+  });
+
+  it('counts a call with no agent yet as waiting', async () => {
+    for (const agent of await h.repos.agent.list(h.tenantId)) {
+      await h.agents.setStatus(h.tenantId, agent.id, 'OFFLINE');
+    }
+    const { call, ticket } = await startCall(h, PHONE.applicantTwoApps, 'floor2');
+    await h.routing.escalate({
+      tenantId: h.tenantId,
+      uccCallId: call.id,
+      uccTicketId: ticket.id,
+      category: 'ADMISSIONS_SUPPORT',
+      reason: 'no agents free',
+      traceId: call.traceId,
+    });
+
+    const queued = await h.calls.get(h.tenantId, call.id);
+    const load = summariseCallLoad([queued]);
+    expect(load.waitingCalls).toBe(1);
+    expect(load.ringingCalls).toBe(0);
   });
 });

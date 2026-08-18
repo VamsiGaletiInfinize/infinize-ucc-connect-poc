@@ -39,7 +39,12 @@ export function Supervisor() {
         <Stat label="Active Calls" value={m.activeCalls} tone="accent" />
         <Stat label="AI Calls" value={m.aiCalls} />
         <Stat label="Agent Calls" value={m.agentCalls} tone="green" />
-        <Stat label="Waiting Calls" value={m.waitingCalls} tone={m.waitingCalls ? 'amber' : undefined} />
+        <Stat
+          label="Waiting Calls"
+          value={m.waitingCalls}
+          hint={m.ringingCalls ? `${m.ringingCalls} ringing at an agent` : undefined}
+          tone={m.waitingCalls ? 'amber' : undefined}
+        />
         <Stat label="Available Agents" value={m.availableAgents} tone="green" />
         <Stat label="Busy Agents" value={m.busyAgents} />
         <Stat label="Escalations" value={m.escalations} tone={m.escalations ? 'amber' : undefined} />

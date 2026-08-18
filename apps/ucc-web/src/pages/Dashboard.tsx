@@ -28,7 +28,12 @@ export function Dashboard() {
         <Stat label="Active Calls" value={m.activeCalls} tone="accent" />
         <Stat label="AI Handling" value={m.aiCalls} hint="No human involved" />
         <Stat label="Agent Calls" value={m.agentCalls} tone="green" />
-        <Stat label="Waiting in Queue" value={m.waitingCalls} tone={m.waitingCalls > 0 ? 'amber' : undefined} />
+        <Stat
+          label="Waiting in Queue"
+          value={m.waitingCalls}
+          hint={m.ringingCalls ? `${m.ringingCalls} ringing at an agent` : undefined}
+          tone={m.waitingCalls > 0 ? 'amber' : undefined}
+        />
       </div>
 
       <div className="grid grid-4">

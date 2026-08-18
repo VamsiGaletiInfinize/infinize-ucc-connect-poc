@@ -62,7 +62,7 @@ isolation; verification not carrying between calls; session replay rejection; ex
 attempts; ticket status not settable from a patch; invalid transitions rejected; passcode
 absent from logs and from every persisted record.
 
-## Two bugs the tests found
+## Three bugs testing found
 
 **Stale ticket in outbound campaigns.** `runCampaign` returned the ticket captured before
 the campaign's classification was applied, so callers saw `NORMAL` priority on a case the
@@ -83,3 +83,35 @@ Both were real defects in the implementation, not test artefacts.
 - No frontend component tests — the UI is verified by build and by manual demo.
 - No load or latency testing.
 - No test of real voice interaction, which is the single largest untested area.
+
+### 3. Supervisor dashboard counted assigned calls as waiting
+
+Found by looking at the screen, not by a test. The "Waiting in Queue" tile counted every
+call with status `QUEUED` — but a call keeps that status from queue entry until the agent
+accepts, so a call already routed to an agent was counted as waiting. The per-queue table
+(counting `QUEUED_FOR_AGENT` tickets) correctly showed zero, and the agent floor showed the
+agent `ON CALL`. Three panels, one screen, two different stories.
+
+Fixed by splitting the bucket in `summariseCallLoad()`: `waitingCalls` (no agent yet) versus
+`ringingCalls` (assigned, not yet accepted), with the latter surfaced as a hint on both
+dashboards.
+
+## Browser verification
+
+`scripts/ui-verify.mjs` drives the console in a real Chromium via Playwright: it visits all
+ten routes, screenshots each one full-page, and fails on React errors, console errors,
+failed network requests, or a route that renders an empty shell.
+
+```bash
+npm start                 # terminal 1
+npm run dev:web           # terminal 2
+node scripts/ui-verify.mjs ui-shots
+```
+
+It requires a seeded call and ticket so the detail pages have something to render; create
+one with `POST /api/calls/inbound` first.
+
+**This is what found the supervisor metric bug.** The unit and integration suites were green
+and the build was clean, because every layer was individually correct — the defect only
+appeared as two panels on one screen disagreeing with each other. A clean build proves the
+code compiles, not that the screen tells the truth.

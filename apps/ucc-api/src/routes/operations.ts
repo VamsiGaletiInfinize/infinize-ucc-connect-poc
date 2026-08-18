@@ -1,7 +1,36 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { OPEN_TICKET_STATUSES } from '@ucc/types';
+import type { UccCall } from '@ucc/types';
 import type { Container } from '../bootstrap/container.ts';
+
+/**
+ * Split active calls into the buckets a supervisor reads on the floor.
+ *
+ * A call keeps status `QUEUED` from the moment it enters a queue until the agent accepts
+ * it, so `QUEUED` alone conflates two very different situations. Once an agent has been
+ * assigned, the call is ringing at that specific agent — it is no longer waiting for one.
+ * Counting it as "waiting" overstates queue depth and contradicts the per-queue table,
+ * which counts tickets still in `QUEUED_FOR_AGENT`.
+ *
+ * Exported so the distinction is pinned by a test rather than left to the route handler.
+ */
+export function summariseCallLoad(activeCalls: UccCall[]): {
+  activeCalls: number;
+  aiCalls: number;
+  agentCalls: number;
+  waitingCalls: number;
+  ringingCalls: number;
+} {
+  const queued = activeCalls.filter((x) => x.status === 'QUEUED');
+  return {
+    activeCalls: activeCalls.length,
+    aiCalls: activeCalls.filter((x) => x.status === 'AI_HANDLING').length,
+    agentCalls: activeCalls.filter((x) => x.status === 'AGENT_CONNECTED').length,
+    waitingCalls: queued.filter((x) => !x.agentId).length,
+    ringingCalls: queued.filter((x) => !!x.agentId).length,
+  };
+}
 
 /** Agents, queues, knowledge, outbound, callbacks, supervisor and demo controls. */
 export function registerOperationRoutes(app: FastifyInstance, c: Container): void {
@@ -94,10 +123,7 @@ export function registerOperationRoutes(app: FastifyInstance, c: Container): voi
 
     return {
       metrics: {
-        activeCalls: activeCalls.length,
-        aiCalls: activeCalls.filter((x) => x.status === 'AI_HANDLING').length,
-        agentCalls: activeCalls.filter((x) => x.status === 'AGENT_CONNECTED').length,
-        waitingCalls: activeCalls.filter((x) => x.status === 'QUEUED').length,
+        ...summariseCallLoad(activeCalls),
         availableAgents: agents.filter((a) => a.status === 'AVAILABLE').length,
         busyAgents: agents.filter((a) => a.status === 'ON_CALL').length,
         escalations: tickets.filter(
