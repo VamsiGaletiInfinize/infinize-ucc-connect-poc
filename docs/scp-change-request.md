@@ -103,7 +103,7 @@ significant platform decision rests on documentation rather than evidence.
 We will create the instance with the CLI, which needs no further permissions:
 
 ```bash
-aws connect create-instance   --identity-management-type CONNECT_MANAGED   --instance-alias infinize-ucc-poc   --inbound-calls-enabled --outbound-calls-enabled
+aws connect create-instance \n  --identity-management-type CONNECT_MANAGED \n  --instance-alias infinize-ucc-poc \n  --inbound-calls-enabled \n  --outbound-calls-enabled
 ```
 
 **Secondary request (lower priority, unrelated)**
