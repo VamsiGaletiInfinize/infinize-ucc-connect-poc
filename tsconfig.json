@@ -1,0 +1,40 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "types": ["node", "vitest/globals"],
+    "baseUrl": ".",
+    "paths": {
+      "@ucc/types": ["packages/types/src/index.ts"],
+      "@ucc/types/*": ["packages/types/src/*"],
+      "@ucc/shared": ["packages/shared/src/index.ts"],
+      "@ucc/shared/*": ["packages/shared/src/*"],
+      "@ucc/config": ["packages/config/src/index.ts"],
+      "@ucc/config/*": ["packages/config/src/*"],
+      "@ucc/services/*": ["services/*/src/index.ts"],
+      "@ucc/api/*": ["apps/ucc-api/src/*"]
+    }
+  },
+  "include": [
+    "packages/**/*.ts",
+    "services/**/*.ts",
+    "apps/ucc-api/**/*.ts",
+    "apps/ucc-web/src/**/*.ts",
+    "apps/ucc-web/src/**/*.tsx",
+    "tests/**/*.ts",
+    "scripts/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist", "infrastructure/cdk/cdk.out"]
+}

@@ -3,3 +3,29 @@
 .dolt/
 *.db
 .beads-credential-key
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment & secrets — NEVER commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials
+.aws/
+
+# CDK
+cdk.out/
+cdk.context.json
+
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db
