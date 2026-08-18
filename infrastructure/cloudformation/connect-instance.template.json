@@ -1,0 +1,518 @@
+{
+  "Description": "Infinize UCC POC - Amazon Connect instance, hours, queues and routing profiles. Voice only; the email channel is deliberately not enabled.",
+  "Resources": {
+    "UccInstance": {
+      "Type": "AWS::Connect::Instance",
+      "Properties": {
+        "Attributes": {
+          "AutoResolveBestVoices": false,
+          "ContactLens": false,
+          "ContactflowLogs": true,
+          "InboundCalls": true,
+          "OutboundCalls": true,
+          "UseCustomTTSVoices": false
+        },
+        "IdentityManagementType": "CONNECT_MANAGED",
+        "InstanceAlias": "infinize-ucc-poc"
+      },
+      "Metadata": {
+        "aws:cdk:path": "InfinizeUccConnectStack/UccInstance"
+      }
+    },
+    "AlwaysOpen": {
+      "Type": "AWS::Connect::HoursOfOperation",
+      "Properties": {
+        "Config": [
+          {
+            "Day": "MONDAY",
+            "EndTime": {
+              "Hours": 23,
+              "Minutes": 59
+            },
+            "StartTime": {
+              "Hours": 0,
+              "Minutes": 0
+            }
+          },
+          {
+            "Day": "TUESDAY",
+            "EndTime": {
+              "Hours": 23,
+              "Minutes": 59
+            },
+            "StartTime": {
+              "Hours": 0,
+              "Minutes": 0
+            }
+          },
+          {
+            "Day": "WEDNESDAY",
+            "EndTime": {
+              "Hours": 23,
+              "Minutes": 59
+            },
+            "StartTime": {
+              "Hours": 0,
+              "Minutes": 0
+            }
+          },
+          {
+            "Day": "THURSDAY",
+            "EndTime": {
+              "Hours": 23,
+              "Minutes": 59
+            },
+            "StartTime": {
+              "Hours": 0,
+              "Minutes": 0
+            }
+          },
+          {
+            "Day": "FRIDAY",
+            "EndTime": {
+              "Hours": 23,
+              "Minutes": 59
+            },
+            "StartTime": {
+              "Hours": 0,
+              "Minutes": 0
+            }
+          },
+          {
+            "Day": "SATURDAY",
+            "EndTime": {
+              "Hours": 23,
+              "Minutes": 59
+            },
+            "StartTime": {
+              "Hours": 0,
+              "Minutes": 0
+            }
+          },
+          {
+            "Day": "SUNDAY",
+            "EndTime": {
+              "Hours": 23,
+              "Minutes": 59
+            },
+            "StartTime": {
+              "Hours": 0,
+              "Minutes": 0
+            }
+          }
+        ],
+        "Description": "Always open \u00e2\u20ac\u201d POC demo hours",
+        "InstanceArn": {
+          "Fn::GetAtt": [
+            "UccInstance",
+            "Arn"
+          ]
+        },
+        "Name": "Infinize 24x7",
+        "TimeZone": "Asia/Kolkata"
+      },
+      "Metadata": {
+        "aws:cdk:path": "InfinizeUccConnectStack/AlwaysOpen"
+      }
+    },
+    "QueueAdmissions": {
+      "Type": "AWS::Connect::Queue",
+      "Properties": {
+        "Description": "Admissions enquiries and application support",
+        "HoursOfOperationArn": {
+          "Fn::GetAtt": [
+            "AlwaysOpen",
+            "HoursOfOperationArn"
+          ]
+        },
+        "InstanceArn": {
+          "Fn::GetAtt": [
+            "UccInstance",
+            "Arn"
+          ]
+        },
+        "Name": "Admissions"
+      },
+      "Metadata": {
+        "aws:cdk:path": "InfinizeUccConnectStack/QueueAdmissions"
+      }
+    },
+    "QueueFinancialAid": {
+      "Type": "AWS::Connect::Queue",
+      "Properties": {
+        "Description": "Fees, scholarships and financial aid",
+        "HoursOfOperationArn": {
+          "Fn::GetAtt": [
+            "AlwaysOpen",
+            "HoursOfOperationArn"
+          ]
+        },
+        "InstanceArn": {
+          "Fn::GetAtt": [
+            "UccInstance",
+            "Arn"
+          ]
+        },
+        "Name": "Financial Aid"
+      },
+      "Metadata": {
+        "aws:cdk:path": "InfinizeUccConnectStack/QueueFinancialAid"
+      }
+    },
+    "QueueTechnicalSupport": {
+      "Type": "AWS::Connect::Queue",
+      "Properties": {
+        "Description": "Applicant portal and technical issues",
+        "HoursOfOperationArn": {
+          "Fn::GetAtt": [
+            "AlwaysOpen",
+            "HoursOfOperationArn"
+          ]
+        },
+        "InstanceArn": {
+          "Fn::GetAtt": [
+            "UccInstance",
+            "Arn"
+          ]
+        },
+        "Name": "Technical Support"
+      },
+      "Metadata": {
+        "aws:cdk:path": "InfinizeUccConnectStack/QueueTechnicalSupport"
+      }
+    },
+    "QueueGeneral": {
+      "Type": "AWS::Connect::Queue",
+      "Properties": {
+        "Description": "General university enquiries",
+        "HoursOfOperationArn": {
+          "Fn::GetAtt": [
+            "AlwaysOpen",
+            "HoursOfOperationArn"
+          ]
+        },
+        "InstanceArn": {
+          "Fn::GetAtt": [
+            "UccInstance",
+            "Arn"
+          ]
+        },
+        "Name": "General Enquiries"
+      },
+      "Metadata": {
+        "aws:cdk:path": "InfinizeUccConnectStack/QueueGeneral"
+      }
+    },
+    "RpAdmissions": {
+      "Type": "AWS::Connect::RoutingProfile",
+      "Properties": {
+        "DefaultOutboundQueueArn": {
+          "Fn::GetAtt": [
+            "QueueAdmissions",
+            "QueueArn"
+          ]
+        },
+        "Description": "Admissions Specialist routing profile",
+        "InstanceArn": {
+          "Fn::GetAtt": [
+            "UccInstance",
+            "Arn"
+          ]
+        },
+        "MediaConcurrencies": [
+          {
+            "Channel": "VOICE",
+            "Concurrency": 1
+          }
+        ],
+        "Name": "Admissions Specialist",
+        "QueueConfigs": [
+          {
+            "Delay": 0,
+            "Priority": 1,
+            "QueueReference": {
+              "Channel": "VOICE",
+              "QueueArn": {
+                "Fn::GetAtt": [
+                  "QueueAdmissions",
+                  "QueueArn"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "InfinizeUccConnectStack/RpAdmissions"
+      }
+    },
+    "RpAdmissionsGeneral": {
+      "Type": "AWS::Connect::RoutingProfile",
+      "Properties": {
+        "DefaultOutboundQueueArn": {
+          "Fn::GetAtt": [
+            "QueueAdmissions",
+            "QueueArn"
+          ]
+        },
+        "Description": "Admissions & General routing profile",
+        "InstanceArn": {
+          "Fn::GetAtt": [
+            "UccInstance",
+            "Arn"
+          ]
+        },
+        "MediaConcurrencies": [
+          {
+            "Channel": "VOICE",
+            "Concurrency": 1
+          }
+        ],
+        "Name": "Admissions & General",
+        "QueueConfigs": [
+          {
+            "Delay": 0,
+            "Priority": 1,
+            "QueueReference": {
+              "Channel": "VOICE",
+              "QueueArn": {
+                "Fn::GetAtt": [
+                  "QueueAdmissions",
+                  "QueueArn"
+                ]
+              }
+            }
+          },
+          {
+            "Delay": 0,
+            "Priority": 2,
+            "QueueReference": {
+              "Channel": "VOICE",
+              "QueueArn": {
+                "Fn::GetAtt": [
+                  "QueueGeneral",
+                  "QueueArn"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "InfinizeUccConnectStack/RpAdmissionsGeneral"
+      }
+    },
+    "RpFinancialAid": {
+      "Type": "AWS::Connect::RoutingProfile",
+      "Properties": {
+        "DefaultOutboundQueueArn": {
+          "Fn::GetAtt": [
+            "QueueFinancialAid",
+            "QueueArn"
+          ]
+        },
+        "Description": "Financial Aid Counsellor routing profile",
+        "InstanceArn": {
+          "Fn::GetAtt": [
+            "UccInstance",
+            "Arn"
+          ]
+        },
+        "MediaConcurrencies": [
+          {
+            "Channel": "VOICE",
+            "Concurrency": 1
+          }
+        ],
+        "Name": "Financial Aid Counsellor",
+        "QueueConfigs": [
+          {
+            "Delay": 0,
+            "Priority": 1,
+            "QueueReference": {
+              "Channel": "VOICE",
+              "QueueArn": {
+                "Fn::GetAtt": [
+                  "QueueFinancialAid",
+                  "QueueArn"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "InfinizeUccConnectStack/RpFinancialAid"
+      }
+    },
+    "RpTechnicalSupport": {
+      "Type": "AWS::Connect::RoutingProfile",
+      "Properties": {
+        "DefaultOutboundQueueArn": {
+          "Fn::GetAtt": [
+            "QueueTechnicalSupport",
+            "QueueArn"
+          ]
+        },
+        "Description": "Technical Support routing profile",
+        "InstanceArn": {
+          "Fn::GetAtt": [
+            "UccInstance",
+            "Arn"
+          ]
+        },
+        "MediaConcurrencies": [
+          {
+            "Channel": "VOICE",
+            "Concurrency": 1
+          }
+        ],
+        "Name": "Technical Support",
+        "QueueConfigs": [
+          {
+            "Delay": 0,
+            "Priority": 1,
+            "QueueReference": {
+              "Channel": "VOICE",
+              "QueueArn": {
+                "Fn::GetAtt": [
+                  "QueueTechnicalSupport",
+                  "QueueArn"
+                ]
+              }
+            }
+          },
+          {
+            "Delay": 0,
+            "Priority": 2,
+            "QueueReference": {
+              "Channel": "VOICE",
+              "QueueArn": {
+                "Fn::GetAtt": [
+                  "QueueGeneral",
+                  "QueueArn"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "InfinizeUccConnectStack/RpTechnicalSupport"
+      }
+    },
+    "RpGeneral": {
+      "Type": "AWS::Connect::RoutingProfile",
+      "Properties": {
+        "DefaultOutboundQueueArn": {
+          "Fn::GetAtt": [
+            "QueueGeneral",
+            "QueueArn"
+          ]
+        },
+        "Description": "General Enquiries routing profile",
+        "InstanceArn": {
+          "Fn::GetAtt": [
+            "UccInstance",
+            "Arn"
+          ]
+        },
+        "MediaConcurrencies": [
+          {
+            "Channel": "VOICE",
+            "Concurrency": 1
+          }
+        ],
+        "Name": "General Enquiries",
+        "QueueConfigs": [
+          {
+            "Delay": 0,
+            "Priority": 1,
+            "QueueReference": {
+              "Channel": "VOICE",
+              "QueueArn": {
+                "Fn::GetAtt": [
+                  "QueueGeneral",
+                  "QueueArn"
+                ]
+              }
+            }
+          },
+          {
+            "Delay": 0,
+            "Priority": 2,
+            "QueueReference": {
+              "Channel": "VOICE",
+              "QueueArn": {
+                "Fn::GetAtt": [
+                  "QueueAdmissions",
+                  "QueueArn"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "InfinizeUccConnectStack/RpGeneral"
+      }
+    }
+  },
+  "Outputs": {
+    "ConnectInstanceId": {
+      "Description": "Set as CONNECT_INSTANCE_ID for the UCC API",
+      "Value": {
+        "Fn::GetAtt": [
+          "UccInstance",
+          "Id"
+        ]
+      }
+    },
+    "ConnectInstanceArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "UccInstance",
+          "Arn"
+        ]
+      }
+    },
+    "ConnectAccessUrl": {
+      "Description": "Amazon Connect admin console for contact flows and the agent CCP",
+      "Value": "https://infinize-ucc-poc.my.connect.aws/"
+    }
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Type": "AWS::SSM::Parameter::Value<String>",
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+    }
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5"
+                  ],
+                  {
+                    "Ref": "BootstrapVersion"
+                  }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+        }
+      ]
+    }
+  }
+}

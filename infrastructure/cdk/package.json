@@ -2,12 +2,16 @@
   "name": "@ucc/infrastructure",
   "version": "1.0.0",
   "private": true,
-  "bin": { "ucc": "bin/ucc.js" },
+  "bin": {
+    "ucc": "bin/ucc.js"
+  },
   "scripts": {
     "synth": "cdk synth",
     "deploy": "cdk deploy --require-approval never",
     "diff": "cdk diff",
-    "destroy": "cdk destroy --force"
+    "destroy": "cdk destroy --force",
+    "synth:connect": "cdk synth InfinizeUccConnectStack",
+    "deploy:connect": "cdk deploy InfinizeUccConnectStack --require-approval never"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.173.2",

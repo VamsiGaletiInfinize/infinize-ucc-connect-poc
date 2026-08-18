@@ -2,7 +2,7 @@
   "name": "infinize-ucc-connect-poc",
   "version": "1.0.0",
   "private": true,
-  "description": "Infinize Unified Contact Center (UCC) — Amazon Connect + Amazon Bedrock reference POC",
+  "description": "Infinize Unified Contact Center (UCC) \u00e2\u20ac\u201d Amazon Connect + Amazon Bedrock reference POC",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -26,7 +26,9 @@
     "test:security": "vitest run tests/security",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "cdk:synth": "npm run synth --workspace @ucc/infrastructure",
-    "cdk:deploy": "npm run deploy --workspace @ucc/infrastructure"
+    "cdk:deploy": "npm run deploy --workspace @ucc/infrastructure",
+    "cdk:synth:connect": "npm --prefix infrastructure/cdk run synth:connect",
+    "cdk:deploy:connect": "npm --prefix infrastructure/cdk run deploy:connect"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.717.0",

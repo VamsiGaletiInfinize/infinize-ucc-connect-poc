@@ -165,7 +165,8 @@ The key demo caller is **Rohan Mehta**, who holds two applications — M.Tech CS
 | [security.md](docs/security.md) | Controls, test coverage, production gaps |
 | [deployment.md](docs/deployment.md) | Local run, CDK, unblocking Amazon Connect |
 | [aws-governance-constraints.md](docs/aws-governance-constraints.md) | **SCP blockers and exactly what an org admin must change** |
-| [scp-change-request.md](docs/scp-change-request.md) | Ready-to-send request to unblock Amazon Connect |
+| [connect-provisioning-via-cloudformation.md](docs/connect-provisioning-via-cloudformation.md) | **Deploy Connect via CloudFormation — try this before any SCP change** |
+| [scp-change-request.md](docs/scp-change-request.md) | Ready-to-send request, if the CloudFormation route is also denied |
 | [nova-sonic-assessment.md](docs/nova-sonic-assessment.md) | Speech-to-speech option: what it fixes, what it costs |
 | [testing.md](docs/testing.md) | Strategy, coverage, browser verification, bugs found |
 | [demo-script.md](docs/demo-script.md) | 12-minute walkthrough |

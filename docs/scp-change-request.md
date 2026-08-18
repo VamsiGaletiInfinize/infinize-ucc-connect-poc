@@ -3,6 +3,13 @@
 Ready to send to whoever administers AWS Organizations for Infinize. Copy from the line
 below; it is written to be actionable without reading the rest of this repository.
 
+> **Try this first.** Infinize guidance is that IAM roles here should be created by
+> CloudFormation under an approved execution role rather than by a human. If the accelerator
+> pipeline's execution role is exempt from the SCP, **no policy change is needed at all** —
+> see [`connect-provisioning-via-cloudformation.md`](./connect-provisioning-via-cloudformation.md),
+> which ships a ready-to-deploy template. Send the request below only if that deploy also
+> fails on `p-qocf1ngi`.
+
 ---
 
 **Subject:** SCP change request — allow Amazon Connect service-linked role (blocks UCC POC)
