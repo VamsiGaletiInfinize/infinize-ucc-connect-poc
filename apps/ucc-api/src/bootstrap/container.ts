@@ -3,7 +3,7 @@ import { logger, resetTicketCounter } from '@ucc/shared';
 import { createRepositories, MemoryDocumentStore, Repositories } from '@ucc/services/store';
 import { EventService } from '@ucc/services/events';
 import { TicketService } from '@ucc/services/ticketing';
-import { VerificationService } from '@ucc/services/verification';
+import { CallSessionTokenService, VerificationService } from '@ucc/services/verification';
 import { IdentityService } from '@ucc/services/identity';
 import { ApplicationService } from '@ucc/services/applications';
 import { KnowledgeService } from '@ucc/services/knowledge';
@@ -34,6 +34,7 @@ export interface Container {
   events: EventService;
   tickets: TicketService;
   verification: VerificationService;
+  sessionTokens: CallSessionTokenService;
   identity: IdentityService;
   applications: ApplicationService;
   knowledge: KnowledgeService;
@@ -65,6 +66,7 @@ export async function buildContainer(options: BuildOptions = {}): Promise<Contai
   const events = new EventService(repos);
   const tickets = new TicketService(repos, events);
   const verification = new VerificationService(repos, events);
+  const sessionTokens = new CallSessionTokenService(repos);
   const identity = new IdentityService(repos, verification);
   const applications = new ApplicationService(repos, identity, events);
   const knowledge = new KnowledgeService(cfg.DEFAULT_TENANT_ID);
@@ -114,6 +116,7 @@ export async function buildContainer(options: BuildOptions = {}): Promise<Contai
     events,
     tickets,
     verification,
+    sessionTokens,
     identity,
     applications,
     knowledge,

@@ -219,3 +219,5 @@ export class VerificationService {
     return this.repos.verification.activeForCall(tenantId, uccCallId);
   }
 }
+
+export * from './session-token.ts';

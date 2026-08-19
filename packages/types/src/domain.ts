@@ -364,6 +364,27 @@ export interface VerificationSession {
   createdAt: string;
 }
 
+/**
+ * Proof that ONE media stream may act on ONE case.
+ *
+ * Minted when UCC emits the TwiML that opens the stream, and presented by the voice
+ * pipeline on every tool call alongside the service credential. It carries no caller
+ * identity, no agent identity and no verification state — it answers only "which case may
+ * this stream touch". Verification remains entirely server-side (constitution Principle
+ * III, X).
+ */
+export interface CallSessionToken {
+  id: string;
+  tenantId: string;
+  /** The single case this token authorises. Deliberately not a list. */
+  uccCallId: string;
+  /** Salted hash of the token. The token itself is never stored, logged, or returned. */
+  tokenHash: string;
+  expiresAt: string;
+  createdAt: string;
+  revokedAt?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Applications (university system of record)
 // ---------------------------------------------------------------------------

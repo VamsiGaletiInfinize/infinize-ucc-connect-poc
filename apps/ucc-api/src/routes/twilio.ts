@@ -87,12 +87,15 @@ export function registerTwilioRoutes(app: FastifyInstance, c: Container): void {
    * escalation, ticketing and routing behave identically either way. Only who performs
    * speech-to-text and text-to-speech differs.
    */
-  function voiceTwiml(uccCallId: string, tenantId: string, greeting?: string): string {
+  const DEFAULT_GREETING =
+    'Thank you for calling Infinize University. How can I help you today?';
+
+  async function voiceTwiml(
+    uccCallId: string,
+    tenantId: string,
+    greeting?: string,
+  ): Promise<string> {
     const response = new twilio.twiml.VoiceResponse();
-    const connect = response.connect({
-      // Twilio posts here once the session ends, carrying any handoffData.
-      action: `${cfg.PUBLIC_BASE_URL}/twilio/voice/handoff`,
-    });
 
     if (cfg.UCC_VOICE === 'pipecat') {
       if (!cfg.PIPECAT_WS_URL) {
@@ -102,18 +105,41 @@ export function registerTwilioRoutes(app: FastifyInstance, c: Container): void {
           500,
         );
       }
-      // Raw bidirectional audio. Pipecat performs STT, inference and TTS; tools still run
-      // through this API, so the authorization gate is unchanged.
+
+      // Spoken BEFORE <Connect>, deliberately. There is roughly a second between Twilio
+      // answering and the media stream carrying audio; a caller who says "hello?" into that
+      // gap loses their opening utterance, and the assistant's first real input becomes a
+      // fragment. Greeting here removes the dead-air window entirely, and it behaves
+      // identically in both pipeline topologies (FR-001, SC-001).
+      response.say({ voice: 'Polly.Aditi' }, greeting ?? DEFAULT_GREETING);
+
+      const connect = response.connect({
+        action: `${cfg.PUBLIC_BASE_URL}/twilio/voice/handoff`,
+      });
+
+      // Raw bidirectional audio. Pipecat performs recognition, inference and synthesis;
+      // tools still run through this API, so the authorization gate is unchanged.
       const stream = connect.stream({ url: cfg.PIPECAT_WS_URL });
       stream.parameter({ name: 'uccCallId', value: uccCallId });
       stream.parameter({ name: 'tenantId', value: tenantId });
+
+      // Proof that this ONE stream may act on this ONE case. The service credential proves
+      // the pipeline is the pipeline; this proves which call it is serving, so a leaked
+      // service credential cannot be used to read an arbitrary case (ADR-0008, FR-028).
+      const { token } = await c.sessionTokens.issue({ tenantId, uccCallId });
+      stream.parameter({ name: 'sessionToken', value: token });
+
       return response.toString();
     }
 
+    const connect = response.connect({
+      // Twilio posts here once the session ends, carrying any handoffData.
+      action: `${cfg.PUBLIC_BASE_URL}/twilio/voice/handoff`,
+    });
+
     const relay = connect.conversationRelay({
       url: relayWsUrl(),
-      welcomeGreeting:
-        greeting ?? 'Thank you for calling Infinize University. How can I help you today?',
+      welcomeGreeting: greeting ?? DEFAULT_GREETING,
       // Callers must be able to cut in; a voice agent you cannot interrupt feels broken.
       interruptible: 'speech',
       ttsProvider: 'Amazon',
@@ -153,7 +179,7 @@ export function registerTwilioRoutes(app: FastifyInstance, c: Container): void {
       providerEventId: `twilio:inbound:${callSid}`,
     });
 
-    reply.type('text/xml').send(voiceTwiml(call.id, call.tenantId));
+    reply.type('text/xml').send(await voiceTwiml(call.id, call.tenantId));
   });
 
   /**
@@ -167,7 +193,7 @@ export function registerTwilioRoutes(app: FastifyInstance, c: Container): void {
     reply
       .type('text/xml')
       .send(
-        voiceTwiml(
+        await voiceTwiml(
           q.uccCallId ?? '',
           q.tenantId ?? c.tenantId,
           'Hello, this is Infinize University calling about your application. Is now a good time?',
@@ -375,13 +401,51 @@ export function registerTwilioRoutes(app: FastifyInstance, c: Container): void {
           });
         }
       }
+    } else if (await sessionProducedNothing(handoff.uccCallId)) {
+      // The stream ended without the assistant ever speaking — a refused session (no case
+      // id, no session token, or no tool catalogue), or an early pipeline failure. The
+      // caller must not simply be hung up on in silence: say something true, and leave the
+      // case open so it can be followed up (FR-048).
+      logger.warn('Voice session ended without any assistant turn', {
+        uccCallId: handoff.uccCallId,
+      });
+      response.say(
+        { voice: 'Polly.Aditi' },
+        'I am sorry, I could not connect you to our assistant just now. Your call has been logged and someone will follow up. Please try again shortly.',
+      );
+      response.hangup();
     } else {
       response.say({ voice: 'Polly.Aditi' }, 'Thank you for calling Infinize University. Goodbye.');
       response.hangup();
     }
 
+    // The call is over one way or another; the stream token must not outlive it (FR-029).
+    if (handoff.uccCallId) {
+      await c.sessionTokens
+        .revokeForCall(c.tenantId, handoff.uccCallId)
+        .catch(() => undefined);
+    }
+
     reply.type('text/xml').send(response.toString());
   });
+
+  /**
+   * Did the assistant ever actually say anything on this call?
+   *
+   * Used to tell a refused or failed session apart from a normal goodbye. A conversation
+   * that produced no transcript turns never got going, whatever the ticket status says.
+   * Errs towards the normal goodbye when it cannot tell, because apologising to a caller
+   * who was served perfectly well is its own kind of wrong.
+   */
+  async function sessionProducedNothing(uccCallId?: string): Promise<boolean> {
+    if (!uccCallId) return false;
+    try {
+      const transcript = await c.repos.transcript.byCallId(c.tenantId, uccCallId);
+      return !transcript || transcript.turns.length === 0;
+    } catch {
+      return false;
+    }
+  }
 
   /**
    * Outcome of dialling the agent's browser.

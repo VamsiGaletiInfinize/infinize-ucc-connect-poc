@@ -74,6 +74,18 @@ const schema = z.object({
   PIPECAT_WS_URL: z.string().optional(),
 
   /**
+   * Shared credential proving that a caller of the voice bridge IS the voice pipeline.
+   *
+   * The bridge executes privileged tools, so it must not be reachable by anything that can
+   * simply reach the API. This proves the service; a per-call session token proves the
+   * stream is entitled to the case it names. Both are required (ADR-0008).
+   *
+   * Required when UCC_VOICE=pipecat, and validated at startup rather than on the first
+   * tool call of the first real caller.
+   */
+  UCC_VOICE_SERVICE_TOKEN: z.string().optional(),
+
+  /**
    * Who owns queueing and agent selection.
    *
    *   'ucc'        UCC decides the department AND the agent, then asks the provider to

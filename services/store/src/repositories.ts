@@ -2,6 +2,7 @@ import type {
   Agent,
   Application,
   Callback,
+  CallSessionToken,
   Caller,
   Department,
   OutboundCampaign,
@@ -143,6 +144,18 @@ export class Repositories {
       return all
         .filter((e) => e.uccTicketId === uccTicketId)
         .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+    },
+  };
+
+  sessionToken = {
+    put: (t: CallSessionToken) =>
+      this.store.put(COLLECTIONS.sessionToken, t.tenantId, t.id, t),
+    get: (tenantId: string, id: string) =>
+      this.store.get<CallSessionToken>(COLLECTIONS.sessionToken, tenantId, id),
+    /** Tokens issued for one call. Normally at most one live at a time. */
+    forCall: async (tenantId: string, uccCallId: string) => {
+      const all = await this.store.list<CallSessionToken>(COLLECTIONS.sessionToken, tenantId);
+      return all.filter((t) => t.uccCallId === uccCallId);
     },
   };
 

@@ -47,6 +47,8 @@ export const COLLECTIONS = {
   callback: 'callback',
   campaign: 'campaign',
   conversation: 'conversation',
+  /** Per-call bearer binding a voice stream to one case. */
+  sessionToken: 'session-token',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
