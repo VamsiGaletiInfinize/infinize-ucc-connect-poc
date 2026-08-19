@@ -235,3 +235,68 @@ describe('Twilio voice webhooks', () => {
     expect(call!.endedAt).toBeTruthy();
   });
 });
+
+describe('voice pipeline selection', () => {
+  let h: TestHarness;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    process.env.TWILIO_AUTH_TOKEN = AUTH_TOKEN;
+    process.env.PUBLIC_BASE_URL = BASE;
+    delete process.env.TWILIO_SKIP_SIGNATURE_CHECK;
+    h = await createHarness();
+  });
+
+  async function boot(voice: 'conversationrelay' | 'pipecat', wsUrl?: string) {
+    process.env.UCC_VOICE = voice;
+    if (wsUrl) process.env.PIPECAT_WS_URL = wsUrl;
+    else delete process.env.PIPECAT_WS_URL;
+    resetConfig();
+    app = await createServer(h);
+    await app.ready();
+  }
+
+  it('uses ConversationRelay by default', async () => {
+    await boot('conversationrelay');
+    const res = await post(app, '/twilio/voice/inbound', {
+      CallSid: 'CA_cr',
+      From: PHONE.student,
+      To: '+15550000000',
+    });
+    expect(res.body).toContain('<ConversationRelay');
+    expect(res.body).not.toContain('<Stream');
+  });
+
+  it('emits a Media Stream to Pipecat when selected, carrying the case id', async () => {
+    await boot('pipecat', 'wss://voice.example.test/ws');
+    const res = await post(app, '/twilio/voice/inbound', {
+      CallSid: 'CA_pc',
+      From: PHONE.student,
+      To: '+15550000000',
+    });
+
+    const xml = res.body;
+    expect(xml).toContain('<Stream');
+    expect(xml).toContain('wss://voice.example.test/ws');
+    expect(xml).not.toContain('<ConversationRelay');
+
+    // Without the case id the pipeline cannot gate, trace or ticket anything.
+    const call = await h.repos.call.byProviderContactId(h.tenantId, 'CA_pc');
+    expect(xml).toContain(call!.id);
+
+    // Escalation still returns to the same action URL, so routing is unchanged.
+    expect(xml).toContain('/twilio/voice/handoff');
+  });
+
+  it('refuses to run Pipecat mode without a websocket URL rather than falling back', async () => {
+    await boot('pipecat');
+    const res = await post(app, '/twilio/voice/inbound', {
+      CallSid: 'CA_pc_misconfigured',
+      From: PHONE.student,
+      To: '+15550000000',
+    });
+    // Silently serving the other pipeline would hide the misconfiguration until a demo.
+    expect(res.statusCode).toBe(500);
+    expect(res.json().error).toBe('CONFIGURATION_ERROR');
+  });
+});

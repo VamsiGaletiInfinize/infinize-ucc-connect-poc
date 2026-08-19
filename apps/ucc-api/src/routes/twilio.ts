@@ -80,6 +80,52 @@ export function registerTwilioRoutes(app: FastifyInstance, c: Container): void {
     return `${cfg.PUBLIC_BASE_URL.replace(/^http/, 'ws')}/twilio/relay`;
   };
 
+  /**
+   * TwiML that opens the AI leg, for whichever pipeline is configured.
+   *
+   * Both carry the UCC correlation ids and both post to the same handoff action URL, so
+   * escalation, ticketing and routing behave identically either way. Only who performs
+   * speech-to-text and text-to-speech differs.
+   */
+  function voiceTwiml(uccCallId: string, tenantId: string, greeting?: string): string {
+    const response = new twilio.twiml.VoiceResponse();
+    const connect = response.connect({
+      // Twilio posts here once the session ends, carrying any handoffData.
+      action: `${cfg.PUBLIC_BASE_URL}/twilio/voice/handoff`,
+    });
+
+    if (cfg.UCC_VOICE === 'pipecat') {
+      if (!cfg.PIPECAT_WS_URL) {
+        throw new UccError(
+          'CONFIGURATION_ERROR',
+          'UCC_VOICE=pipecat requires PIPECAT_WS_URL. Refusing to fall back silently.',
+          500,
+        );
+      }
+      // Raw bidirectional audio. Pipecat performs STT, inference and TTS; tools still run
+      // through this API, so the authorization gate is unchanged.
+      const stream = connect.stream({ url: cfg.PIPECAT_WS_URL });
+      stream.parameter({ name: 'uccCallId', value: uccCallId });
+      stream.parameter({ name: 'tenantId', value: tenantId });
+      return response.toString();
+    }
+
+    const relay = connect.conversationRelay({
+      url: relayWsUrl(),
+      welcomeGreeting:
+        greeting ?? 'Thank you for calling Infinize University. How can I help you today?',
+      // Callers must be able to cut in; a voice agent you cannot interrupt feels broken.
+      interruptible: 'speech',
+      ttsProvider: 'Amazon',
+      transcriptionProvider: 'Deepgram',
+      language: 'en-IN',
+    });
+    // Correlation ids arrive back on the websocket setup message.
+    relay.parameter({ name: 'uccCallId', value: uccCallId });
+    relay.parameter({ name: 'tenantId', value: tenantId });
+    return response.toString();
+  }
+
   // --- inbound -----------------------------------------------------------
 
   /**
@@ -107,26 +153,7 @@ export function registerTwilioRoutes(app: FastifyInstance, c: Container): void {
       providerEventId: `twilio:inbound:${callSid}`,
     });
 
-    const response = new twilio.twiml.VoiceResponse();
-    const connect = response.connect({
-      // Twilio posts here once the session ends, carrying any handoffData.
-      action: `${cfg.PUBLIC_BASE_URL}/twilio/voice/handoff`,
-    });
-    const relay = connect.conversationRelay({
-      url: relayWsUrl(),
-      welcomeGreeting:
-        'Thank you for calling Infinize University. How can I help you today?',
-      // Callers must be able to cut in; a voice agent you cannot interrupt feels broken.
-      interruptible: 'speech',
-      ttsProvider: 'Amazon',
-      transcriptionProvider: 'Deepgram',
-      language: 'en-IN',
-    });
-    // Correlation ids arrive back on the websocket setup message.
-    relay.parameter({ name: 'uccCallId', value: call.id });
-    relay.parameter({ name: 'tenantId', value: call.tenantId });
-
-    reply.type('text/xml').send(response.toString());
+    reply.type('text/xml').send(voiceTwiml(call.id, call.tenantId));
   });
 
   /**
@@ -137,22 +164,15 @@ export function registerTwilioRoutes(app: FastifyInstance, c: Container): void {
     assertTwilioSignature(request);
 
     const q = request.query as Record<string, string | undefined>;
-    const response = new twilio.twiml.VoiceResponse();
-    const connect = response.connect({
-      action: `${cfg.PUBLIC_BASE_URL}/twilio/voice/handoff`,
-    });
-    const relay = connect.conversationRelay({
-      url: relayWsUrl(),
-      welcomeGreeting:
-        'Hello, this is Infinize University calling about your application. Is now a good time?',
-      interruptible: 'speech',
-      ttsProvider: 'Amazon',
-      language: 'en-IN',
-    });
-    if (q.uccCallId) relay.parameter({ name: 'uccCallId', value: q.uccCallId });
-    if (q.tenantId) relay.parameter({ name: 'tenantId', value: q.tenantId });
-
-    reply.type('text/xml').send(response.toString());
+    reply
+      .type('text/xml')
+      .send(
+        voiceTwiml(
+          q.uccCallId ?? '',
+          q.tenantId ?? c.tenantId,
+          'Hello, this is Infinize University calling about your application. Is now a good time?',
+        ),
+      );
   });
 
   // --- the conversation --------------------------------------------------

@@ -13,6 +13,7 @@ import { registerApplicationRoutes } from './routes/applications.ts';
 import { registerOperationRoutes } from './routes/operations.ts';
 import { registerTwilioRoutes } from './routes/twilio.ts';
 import { registerAgentVoiceRoutes } from './routes/agent-voice.ts';
+import { registerVoiceBridgeRoutes } from './routes/voice-bridge.ts';
 
 export async function createServer(c: Container): Promise<FastifyInstance> {
   const app = Fastify({ logger: false, bodyLimit: 1_048_576 });
@@ -129,6 +130,7 @@ export async function createServer(c: Container): Promise<FastifyInstance> {
   registerOperationRoutes(app, c);
   registerTwilioRoutes(app, c);
   registerAgentVoiceRoutes(app, c);
+  registerVoiceBridgeRoutes(app, c);
 
   return app;
 }

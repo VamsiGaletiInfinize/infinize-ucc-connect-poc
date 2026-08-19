@@ -1,0 +1,10 @@
+# Pipecat with the pieces this pipeline actually uses:
+#   aws      -> Amazon Nova Sonic speech-to-speech on Bedrock
+#   silero   -> voice activity detection for turn-taking
+#   twilio   -> TwilioFrameSerializer for Media Streams
+#   webrtc   -> audio resampling helpers
+pipecat-ai[aws,silero,twilio,webrtc]==1.0.0
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+python-dotenv==1.0.1

@@ -58,6 +58,22 @@ const schema = z.object({
   /** Storage backend selection: 'dynamodb' | 'memory'. */
   UCC_PERSISTENCE: z.enum(['dynamodb', 'memory']).default('memory'),
   /**
+   * Which voice pipeline carries the AI leg.
+   *
+   *   'conversationrelay'  Twilio does STT and TTS; UCC runs Bedrock Converse per turn.
+   *                        Managed, stateless per turn, ~2-3s per exchange.
+   *   'pipecat'            An external Pipecat service runs Amazon Nova Sonic
+   *                        speech-to-speech over Twilio Media Streams. ~433ms measured,
+   *                        model-level barge-in, but a long-lived stateful stream.
+   *
+   * Both paths execute tools through the SAME UCC gate, so the security boundary does not
+   * move with the model.
+   */
+  UCC_VOICE: z.enum(['conversationrelay', 'pipecat']).default('conversationrelay'),
+  /** Public wss URL of the Pipecat service. Required when UCC_VOICE=pipecat. */
+  PIPECAT_WS_URL: z.string().optional(),
+
+  /**
    * Who owns queueing and agent selection.
    *
    *   'ucc'        UCC decides the department AND the agent, then asks the provider to

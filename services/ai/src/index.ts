@@ -12,7 +12,7 @@ import type { IdentityService } from '@ucc/services/identity';
 import type { TicketService } from '@ucc/services/ticketing';
 import type { EventService } from '@ucc/services/events';
 import type { TranscriptService } from '@ucc/services/recording';
-import { TOOL_SPECS, ToolExecutor, type ToolDependencies } from './tools.ts';
+import { TOOL_SPECS, ToolExecutor, type ToolDependencies, type ToolResult } from './tools.ts';
 import { buildSystemPrompt } from './prompt.ts';
 import { classifyIntent } from './intent.ts';
 
@@ -299,6 +299,37 @@ export class AiOrchestrator {
       summary,
       resolution: summary,
     });
+  }
+
+  /**
+   * Execute one tool on behalf of an EXTERNAL voice pipeline (Pipecat + Nova Sonic).
+   *
+   * When speech-to-speech runs outside this process, the model lives in Pipecat but
+   * authorization must not. This is the single door back in: the security context is
+   * rebuilt from PERSISTED state here, exactly as it is for the Converse path, so a
+   * caller who has not verified is refused no matter which model asked (ADR-0002).
+   *
+   * Pipecat therefore holds no tool logic, no schemas of its own, and no ability to
+   * decide what a caller may see. It transports audio and relays requests.
+   */
+  async executeToolForCall(params: {
+    call: UccCall;
+    ticket: UccTicket;
+    name: string;
+    input: Record<string, unknown>;
+  }): Promise<{ result: ToolResult; ticket: UccTicket }> {
+    const ctx = await this.deps.identity.buildSecurityContext(params.call, params.ticket.id);
+    const result = await this.tools.execute(params.name, params.input, ctx);
+
+    // A tool may have transitioned the ticket (escalation, callback), so return the
+    // reloaded ticket rather than the caller's stale copy.
+    const ticket = await this.deps.tickets.get(params.call.tenantId, params.ticket.id);
+    return { result, ticket };
+  }
+
+  /** The tool catalogue, so an external pipeline uses one definition rather than a copy. */
+  toolSpecs(): typeof TOOL_SPECS {
+    return TOOL_SPECS;
   }
 
   /** Contact-flow fallback: escalate when the AI itself cannot run. */
