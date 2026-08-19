@@ -86,13 +86,58 @@ covers explicitly.
 - The runtime IAM role is least-privilege: scoped Bedrock model ARNs, one table, one
   bucket, one Connect instance. Explicitly not `AdministratorAccess`.
 
+## The voice bridge: an out-of-process model
+
+When speech-to-speech or a cascaded voice pipeline runs outside this process, the **model**
+moves. Authorization, tool logic and the tool catalogue must not. Two endpoints are the only
+way in:
+
+```
+GET  /api/ai/tools          the one tool catalogue, so the pipeline never keeps a copy
+POST /api/calls/:id/tool    execute a tool through the real gate
+```
+
+Both are authenticated, and deliberately by **two** different things:
+
+| Credential | Proves | Failure |
+|---|---|---|
+| `Authorization: Bearer <service token>` | the caller **is** the voice pipeline | `401` |
+| `X-Ucc-Session-Token: <per-call token>` | this stream may act on **this case** | `401` / `403` |
+
+The second one is the point. A shared service credential authenticates the *service* but not
+the *session*, so any holder could read any case by guessing a call id — which is the
+server-side authorization property of [ADR-0002](./adr/0002-server-side-authorization.md)
+reopened one layer down. The per-call token is minted when the TwiML is generated, bound to
+exactly one `uccCallId`, stored only as a salted hash, and revoked when the call ends.
+
+The service credential is compared in constant time: a secret guarding privileged tool
+execution should not leak its prefix to anyone willing to measure.
+
+Note what the session token is **not**. It is scope, not permission. A verified caller and an
+unverified caller present the same token; whether protected data is disclosed is still
+decided by the identity gate reading persisted state. If the entire voice pipeline were
+hostile, it would still obtain no protected data.
+
+**Threat, stated rather than implied.** The session token reaches the pipeline inside the
+TwiML response and returns on the stream `start` frame, so it transits Twilio. Anyone able to
+observe either can impersonate **that one session, for that one call, until the token
+expires**. That is acceptable over TLS for a POC with a bounded lifetime, and it is a real
+reduction from the previous state — the endpoints were entirely unauthenticated. A production
+design should exchange a nonce for a token over a direct UCC↔pipeline channel instead, so no
+bearer credential rides through a third party.
+
+Covered by `tests/unit/voice-bridge-auth.test.ts`, which is written from the attacker's side:
+what does someone holding *part* of what they need actually get?
+
 ## Known gaps for production
 
 1. **No end-user authentication on the UCC API.** Agent and supervisor endpoints are
    unauthenticated in the POC; `agentId` is supplied by the caller. Production needs
    Cognito or the existing Infinize IdP, with `agentId` taken from a verified token — the
    ownership checks in `AgentService` are already written against a server-side agent
-   identity, so this is a wiring change rather than a redesign.
+   identity, so this is a wiring change rather than a redesign. **The voice bridge is now
+   the exception**: it is authenticated, because it executes privileged tools for a process
+   outside this one. The rest of the surface still carries this gap.
 2. **Fixed demo passcode.** Replace with a random code delivered via Pinpoint/SNS.
 3. **Tenant is taken from configuration**, not resolved from the dialled number. Multi-tenant
    production must resolve tenant from the inbound DNIS.
