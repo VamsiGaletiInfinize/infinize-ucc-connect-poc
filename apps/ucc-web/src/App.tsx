@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Softphone } from './components/Softphone.tsx';
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { api, subscribeRealtime } from './lib/api.ts';
 import { Dashboard } from './pages/Dashboard.tsx';
@@ -40,6 +41,14 @@ const TITLES: Record<string, string> = {
   '/supervisor': 'Supervisor',
   '/live': 'Live Call Console',
 };
+
+/**
+ * Which agent this browser is signed in as.
+ *
+ * Hard-coded for the POC because the API has no end-user authentication yet. In a real
+ * deployment this comes from the authenticated session — see docs/security.md.
+ */
+const ACTING_AGENT_ID = 'agent-aditya';
 
 export function App() {
   const location = useLocation();
@@ -113,6 +122,9 @@ export function App() {
             ),
           )}
         </nav>
+        <div className="sidebar-softphone">
+          <Softphone agentId={ACTING_AGENT_ID} />
+        </div>
         <div className="sidebar-footer">
           <div className="row" style={{ gap: 6 }}>
             <span className={`dot ${connected ? 'green' : 'gray'}`} />

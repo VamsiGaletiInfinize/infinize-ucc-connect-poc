@@ -258,3 +258,21 @@ label { display: block; font-size: 11px; text-transform: uppercase; letter-spaci
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; border: 2px solid var(--bg); }
 ::-webkit-scrollbar-thumb:hover { background: #4a5a6d; }
+
+/* --- agent softphone ---------------------------------------------------- */
+/* Always visible rather than a modal: a dialog that must be dismissed is a
+   dialog that can hide a ringing call. */
+.softphone {
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  background: var(--bg-panel); padding: 12px; display: flex;
+  flex-direction: column; gap: 9px;
+}
+.softphone-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.softphone-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.softphone-timer { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
+.softphone-from { font-size: 12px; color: var(--text-dim); }
+.softphone-from code { font-family: var(--mono); color: var(--text); }
+.softphone-error { font-size: 12px; color: #ff7b72; }
+.softphone-hint { color: var(--text-muted); margin-top: 3px; }
+.softphone-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.sidebar-softphone { padding: 10px 12px 0; }

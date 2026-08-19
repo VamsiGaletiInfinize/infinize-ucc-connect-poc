@@ -121,6 +121,14 @@ export interface Agent {
   currentCallId?: string;
   /** Provider user id once Connect is provisioned. */
   providerUserId?: string;
+  /**
+   * TaskRouter Worker this agent maps to, when telephony is Twilio.
+   *
+   * Amazon Connect identifies agents by its own user id; TaskRouter uses a Worker SID.
+   * Holding the platform id beside the UCC agent lets the routing layer be swapped without
+   * changing how UCC refers to people.
+   */
+  workerSid?: string;
   maxConcurrentContacts: number;
   createdAt: string;
   updatedAt: string;
