@@ -29,10 +29,36 @@ const schema = z.object({
   CONNECT_CONTACT_FLOW_ID: z.string().optional(),
   CONNECT_SOURCE_PHONE_NUMBER: z.string().optional(),
 
+  /**
+   * Twilio. Used when UCC_TELEPHONY=twilio.
+   *
+   * Amazon Connect is blocked org-wide by SCP p-qocf1ngi (ADR-0004), so Twilio provides
+   * telephony, queueing (TaskRouter) and the agent voice endpoint (Voice JS SDK). Bedrock
+   * still does all reasoning, so caller data never reaches a third-party model.
+   *
+   * The auth token is a secret: it is read from the environment only, never logged, and
+   * never sent to the browser. The browser receives short-lived Access Tokens instead.
+   */
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  /** E.164 number callers dial. */
+  TWILIO_PHONE_NUMBER: z.string().optional(),
+  /** TaskRouter workspace that owns the queues and workers. */
+  TWILIO_WORKSPACE_SID: z.string().optional(),
+  /** Workflow that routes escalated tasks to the right department queue. */
+  TWILIO_WORKFLOW_SID: z.string().optional(),
+  /** TwiML App backing the browser softphone. */
+  TWILIO_TWIML_APP_SID: z.string().optional(),
+  /** API key pair used to mint browser Access Tokens without exposing the auth token. */
+  TWILIO_API_KEY_SID: z.string().optional(),
+  TWILIO_API_KEY_SECRET: z.string().optional(),
+  /** Public base URL Twilio calls back on, e.g. an ngrok tunnel in development. */
+  PUBLIC_BASE_URL: z.string().optional(),
+
   /** Storage backend selection: 'dynamodb' | 'memory'. */
   UCC_PERSISTENCE: z.enum(['dynamodb', 'memory']).default('memory'),
-  /** Telephony backend selection: 'connect' | 'simulated'. */
-  UCC_TELEPHONY: z.enum(['connect', 'simulated']).default('simulated'),
+  /** Telephony backend selection: 'twilio' | 'connect' | 'simulated'. */
+  UCC_TELEPHONY: z.enum(['twilio', 'connect', 'simulated']).default('simulated'),
   /** Retrieval backend: 'bedrock' uses live Titan embeddings; 'lexical' is an offline fallback. */
   UCC_RETRIEVAL: z.enum(['bedrock', 'lexical']).default('bedrock'),
 

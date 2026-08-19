@@ -19,7 +19,10 @@ export type UccErrorCode =
   | 'UPSTREAM_UNAVAILABLE'
   | 'VALIDATION_FAILED'
   | 'CONFLICT'
-  | 'IMMUTABLE_FIELD';
+  | 'IMMUTABLE_FIELD'
+  /** Server-side setup fault: a required setting is absent or inconsistent. Never the
+   *  caller's fault, so it is a 5xx and must not be surfaced as user-facing guidance. */
+  | 'CONFIGURATION_ERROR';
 
 export class UccError extends Error {
   readonly code: UccErrorCode;

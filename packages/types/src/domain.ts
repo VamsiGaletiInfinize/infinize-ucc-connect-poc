@@ -132,7 +132,7 @@ export interface Agent {
 
 export type CallDirection = 'INBOUND' | 'OUTBOUND';
 export type CallChannel = 'VOICE' | 'CHAT';
-export type TelephonyProviderName = 'AMAZON_CONNECT' | 'SIMULATED_CONNECT';
+export type TelephonyProviderName = 'AMAZON_CONNECT' | 'TWILIO' | 'SIMULATED_CONNECT';
 
 export const CALL_STATUSES = [
   'INITIATED',
