@@ -55,4 +55,5 @@ gate, verification and knowledge services are correct and consumed as-is. If any
 proves defective, this feature's scope grows and the spec needs revisiting rather than the
 defect being absorbed silently.
 
-**Status**: All items pass. Ready for `/speckit-clarify`.
+**Status**: All items pass. Re-validated 2026-08-19 after clarification (3 questions
+answered, no items changed state). Ready for `/speckit-plan`.

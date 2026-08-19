@@ -35,6 +35,32 @@ below names it explicitly.
 
 ---
 
+## Clarifications
+
+### Session 2026-08-19
+
+- Q: Which speech-to-text and text-to-speech providers should the cascaded pipeline use by
+  default? → A: All AWS — Amazon Transcribe (STT), Bedrock Claude (LLM), Amazon Polly (TTS).
+  No new vendor accounts, no new credentials, and caller audio stays inside the existing
+  account boundary. Verified present in the pinned voice framework as streaming-capable
+  services. Latency is expected to be worse than a best-of-breed pairing; because provider
+  choice is configuration (FR-022), that is measurable and cheap to revisit.
+- Q: How should UCC verify that a tool request really comes from the voice pipeline, and
+  really belongs to the call it names? → A: Both, layered. A shared service credential
+  proves the pipeline's identity (FR-027); a short-lived token minted by UCC and bound to
+  one call id proves the session is entitled to that specific case (FR-028). A shared
+  secret alone was rejected because any holder could then read any case by guessing a call
+  id — which is the hole Principle X exists to close, reopened one layer down.
+- Q: Who should speak the very first words the caller hears — the telephony layer before the
+  audio stream connects, or the assistant once connected? → A: The telephony layer speaks a
+  fixed greeting from the call-answer instructions while the stream is still being
+  established; the assistant then listens rather than opening with its own greeting. This
+  removes the roughly one-second dead-air window during stream setup, behaves identically in
+  both topologies, and matches what the existing text-based voice path already does. The
+  cost is that the greeting is fixed text in a different voice from the assistant's.
+
+---
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - A caller gets a useful answer by phone (Priority: P1)
@@ -55,7 +81,8 @@ exists with a full timeline.
 **Acceptance Scenarios**:
 
 1. **Given** the voice service is running and the number is pointed at it, **When** a caller
-   dials, **Then** they hear a greeting within a few seconds and a case is already open.
+   dials, **Then** they hear a greeting on answer with no preceding silence, a case is
+   already open, and the assistant is listening by the time the greeting finishes.
 2. **Given** a connected call, **When** the caller asks a question covered by the published
    corpus, **Then** the answer is drawn from that corpus and contains no invented specifics.
 3. **Given** the assistant is speaking, **When** the caller starts talking over it, **Then**
@@ -265,7 +292,11 @@ the caller hears an appropriate sentence and the case reflects the failure.
 **Call handling**
 
 - **FR-001**: The system MUST answer an inbound call to the POC number and begin a voice
-  conversation without the caller taking any action beyond dialling.
+  conversation without the caller taking any action beyond dialling. A fixed greeting MUST
+  be spoken by the telephony layer while the audio stream is being established, so the
+  caller never hears silence on answer. The assistant MUST then listen rather than speaking
+  a second greeting of its own, and MUST behave identically in this respect in both
+  topologies.
 - **FR-002**: The system MUST open exactly one case per call, at call start, before the
   conversation begins — including for calls abandoned during the greeting.
 - **FR-003**: The system MUST support the caller interrupting the assistant, and MUST stop
@@ -328,43 +359,46 @@ the caller hears an appropriate sentence and the case reflects the failure.
 **Security**
 
 - **FR-027**: The tool-execution channel between the voice pipeline and UCC MUST require a
-  service credential.
-- **FR-028**: That channel MUST reject a request for a case the calling session is not bound
-  to.
-- **FR-029**: The service MUST refuse to start if the credential is absent.
-- **FR-030**: Credentials and secrets MUST come from the environment, MUST NOT be committed,
+  service credential that proves the caller is the voice pipeline.
+- **FR-028**: That channel MUST additionally require a per-call token, minted by UCC, bound
+  to exactly one case, and MUST reject a request for any other case — including a request
+  bearing a valid service credential.
+- **FR-029**: The per-call token MUST expire, and MUST be rejected after the call it belongs
+  to has ended.
+- **FR-030**: The service MUST refuse to start if the service credential is absent.
+- **FR-031**: Credentials and secrets MUST come from the environment, MUST NOT be committed,
   and MUST NOT appear in logs or any browser-delivered asset.
-- **FR-031**: Inbound webhooks MUST remain signature-verified. Any bypass MUST be an
+- **FR-032**: Inbound webhooks MUST remain signature-verified. Any bypass MUST be an
   explicit, loudly-logged, local-only opt-in.
 
 **Observability**
 
-- **FR-032**: Every voice session MUST carry the case correlation id on every log line.
-- **FR-033**: The system MUST record, per turn: time to first transcript, time to first
+- **FR-033**: Every voice session MUST carry the case correlation id on every log line.
+- **FR-034**: The system MUST record, per turn: time to first transcript, time to first
   model token, time to first audio, and end-to-end turn latency.
-- **FR-034**: The system MUST record tool name, outcome and round-trip duration for every
+- **FR-035**: The system MUST record tool name, outcome and round-trip duration for every
   tool invocation.
-- **FR-035**: Session lifecycle transitions MUST be logged: stream open, first audio,
+- **FR-036**: Session lifecycle transitions MUST be logged: stream open, first audio,
   escalation, close, and close reason.
-- **FR-036**: Logs MUST NOT contain passcodes, credentials, secrets, or unnecessary personal
+- **FR-037**: Logs MUST NOT contain passcodes, credentials, secrets, or unnecessary personal
   data.
-- **FR-037**: Logs MUST be structured.
+- **FR-038**: Logs MUST be structured.
 
 **Failure handling**
 
-- **FR-038**: Every dependency call MUST have a bounded timeout.
-- **FR-039**: Every failure MUST produce a structured internal record and a safe
+- **FR-039**: Every dependency call MUST have a bounded timeout.
+- **FR-040**: Every failure MUST produce a structured internal record and a safe
   caller-facing sentence containing no technical detail.
-- **FR-040**: A dependency failure MUST NOT terminate the call silently.
+- **FR-041**: A dependency failure MUST NOT terminate the call silently.
 
 **Verification of the work itself**
 
-- **FR-041**: The voice service MUST import and start against its own pinned dependencies.
-- **FR-042**: The voice service MUST have automated tests covering tool-schema conversion,
+- **FR-042**: The voice service MUST import and start against its own pinned dependencies.
+- **FR-043**: The voice service MUST have automated tests covering tool-schema conversion,
   the tool bridge client, session binding, configuration selection, and failure handling.
-- **FR-043**: The escalation-to-human path MUST be validated on a real phone call, not only
+- **FR-044**: The escalation-to-human path MUST be validated on a real phone call, not only
   in automated tests.
-- **FR-044**: Documentation MUST distinguish what has been executed and verified from what
+- **FR-045**: Documentation MUST distinguish what has been executed and verified from what
   has only been implemented.
 
 ### Key Entities
@@ -388,8 +422,9 @@ the caller hears an appropriate sentence and the case reflects the failure.
 
 ### Measurable Outcomes
 
-- **SC-001**: A caller dialling the number hears the assistant's first words within 5
-  seconds of the call connecting.
+- **SC-001**: A caller dialling the number hears the greeting immediately on answer, with no
+  audible silence beforehand, and their first utterance after the greeting is understood —
+  measured as zero lost opening utterances across the scripted call set.
 - **SC-002**: In the speech-to-speech topology, the assistant begins responding within 1
   second of the caller finishing a sentence, on a turn requiring no record lookup.
 - **SC-003**: In the cascaded topology, the assistant begins responding within 2.5 seconds
@@ -437,13 +472,17 @@ the caller hears an appropriate sentence and the case reflects the failure.
 - The existing ticket-per-call model satisfies the ticketing requirement. No separate
   ticket-creation tool and no external ticketing system is introduced.
 
-**Provider defaults** (recorded here, justified in the plan)
+**Provider defaults** (decided in Clarifications, justified in the plan)
 
-- Cascaded inference stays on the model already used by the text path, so caller data does
-  not reach an additional vendor and answers stay comparable across paths.
-- Cascaded speech recognition and synthesis default to providers with first-class support in
-  the voice framework and streaming, low-latency APIs. The choice is configuration, so a
-  wrong default is cheap to correct.
+- All three cascaded stages default to AWS: Amazon Transcribe for speech recognition,
+  Bedrock Claude for inference, Amazon Polly for synthesis. This adds no vendor account, no
+  new credential, and keeps caller audio within the account boundary the security
+  documentation already describes.
+- Inference therefore stays on the same model as the existing text path, so answers are
+  comparable across paths and any difference is attributable to the voice layer.
+- These defaults are expected to be slower than a best-of-breed pairing. Because provider
+  choice is configuration (FR-022), the assumption is testable: if the cascaded topology
+  misses SC-003, swapping one stage is the first remedy, not a redesign.
 - Speech-to-speech uses the model version already spiked and measured in this repository;
   the earlier version is excluded because it did not emit tool requests.
 
