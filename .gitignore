@@ -29,3 +29,9 @@ cdk.context.json
 *.log
 .DS_Store
 Thumbs.db
+
+# Python (services/voice-pipecat)
+.venv/
+venv/
+__pycache__/
+*.pyc
