@@ -97,10 +97,19 @@ clarification session.
 - **No new credentials.** `.env` today holds Twilio secrets and nothing else — no STT or TTS
   keys of any kind. Choosing Deepgram or Cartesia would block the cascaded pipeline on
   vendor signup rather than on code.
-- **Credential mechanism already works.** All three services construct `aioboto3.Session()`
-  with no arguments, which resolves through the standard AWS credential chain and therefore
-  honours `AWS_PROFILE`. That is exactly how this repository already authenticates locally
-  (`README.md`), so nothing new is introduced.
+- **Credential mechanism already works — for these three.** `AWSTranscribeSTTService`,
+  `AWSBedrockLLMService` and `AWSPollyTTSService` all construct `aioboto3.Session()` with no
+  arguments, which resolves through the standard AWS credential chain and therefore honours
+  `AWS_PROFILE`. That is exactly how this repository already authenticates locally
+  (`README.md`), so nothing new is introduced on the cascaded path.
+
+  > **Correction, found during implementation.** This does **not** extend to Nova Sonic, as
+  > an earlier draft of this document claimed. `AWSNovaSonicLLMService.__init__` takes
+  > `access_key_id` and `secret_access_key` as *required* keyword arguments and never
+  > touches the credential chain. The s2s path therefore resolves the chain itself
+  > (`boto3.Session().get_credentials()`) and passes the frozen credentials in, so
+  > `AWS_PROFILE` still works and no access key has to be added to `.env`. See
+  > `_resolve_aws_credentials` in `services/voice-pipecat/pipeline.py`.
 - **Sample rate lines up.** `AWSTranscribeSTTService` accepts 8000 or 16000 Hz and clamps
   anything else to 16000. Twilio Media Streams is 8 kHz μ-law, so the cascaded input path
   needs no resampling — one less transformation in the latency budget.

@@ -1,145 +1,200 @@
 """
-UCC voice pipeline: Twilio Media Streams -> Amazon Nova Sonic -> UCC tools -> caller.
+UCC voice pipeline: Twilio Media Streams -> STT/LLM/TTS or speech-to-speech -> UCC tools.
 
 RESPONSIBILITY BOUNDARY
 -----------------------
 This service owns the real-time voice leg and nothing else:
 
-    owns          audio transport, turn-taking, barge-in, speech-to-speech inference
+    owns          audio transport, turn-taking, barge-in, inference orchestration
     does NOT own  identity, verification, authorization, tool logic, queueing, agent
                   selection, tickets, persistence
 
 Every tool the model calls is executed by the UCC API, which rebuilds the security context
 from persisted state. An unverified caller is refused whichever model asks (ADR-0002).
-Moving the model out of the UCC process must not move the security boundary with it.
-
-WHY NOVA SONIC
---------------
-ConversationRelay costs a speech-to-text hop, a Bedrock Converse round-trip and a
-text-to-speech hop - roughly 2-3s per turn. Nova Sonic does all three in one bidirectional
-stream, measured at 433ms to first audio. Version 2 is required: v1 never emitted a tool
-request in testing, which would restrict it to public FAQ answers only.
+Moving the model out of the UCC process must not move the security boundary with it
+(constitution Principle X).
 """
 from __future__ import annotations
 
 import json
 import logging
-import os
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import JSONResponse
-
-from pipecat.adapters.schemas.function_schema import FunctionSchema
-from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import EndFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
 from pipecat.serializers.twilio import TwilioFrameSerializer
-from pipecat.services.aws_nova_sonic.aws import AWSNovaSonicLLMService
-from pipecat.transports.network.fastapi_websocket import (
+from pipecat.transports.websocket.fastapi import (
     FastAPIWebsocketParams,
     FastAPIWebsocketTransport,
 )
 
-from ucc_client import UccClient
+from config import ConfigError, PipelineConfig, load_config
+from observability import CallLogger, MetricsObserver, configure_logging
+from pipeline import TWILIO_SAMPLE_RATE, build_context, build_llm, build_processors
+from tools import ToolBridge, to_tools_schema
+from ucc_client import UccAuthError, UccClient
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+# Nova Sonic emits 24 kHz; the serializer resamples down to Twilio's 8 kHz mu-law.
+AUDIO_OUT_SAMPLE_RATE = 24000
+
+# Close codes for a refused stream. 1008 is "policy violation", which is what this is: the
+# stream did not present what it needs to be governed.
+WS_POLICY_VIOLATION = 1008
+
 logger = logging.getLogger("ucc-voice")
 
-UCC_API_BASE = os.getenv("UCC_API_BASE", "http://localhost:4000")
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-# v2 deliberately: v1 does not emit tool requests, which would limit us to public FAQ.
-NOVA_MODEL = os.getenv("NOVA_SONIC_MODEL_ID", "amazon.nova-2-sonic-v1:0")
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+_config: PipelineConfig | None = None
 
-app = FastAPI(title="UCC voice pipeline")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Validate everything that can be validated before a caller is on the line.
+
+    Configuration errors and a mismatched service credential both surface here rather than
+    on the first tool call of the first real caller (FR-026, FR-030, FR-050).
+    """
+    global _config
+    _config = load_config()
+    configure_logging(_config.log_level)
+
+    probe = UccClient(_config.ucc_api_base, _config.service_token)
+    try:
+        await probe.verify_credentials()
+        logger.info(
+            "voice service ready",
+            extra={"ucc": {"mode": _config.mode, "uccApiBase": _config.ucc_api_base}},
+        )
+    except UccAuthError:
+        # Refuse to start: a service that cannot authenticate will fail every tool call,
+        # and failing at startup is far cheaper to diagnose than failing mid-conversation.
+        raise
+    except Exception as exc:
+        # UCC being merely unreachable at boot is not fatal — it may still be starting —
+        # but it is worth saying loudly, because the symptom later is a silent call.
+        logger.warning(
+            "could not reach UCC at startup; credentials unverified",
+            extra={"ucc": {"reason": type(exc).__name__}},
+        )
+    finally:
+        await probe.close()
+
+    yield
+
+
+app = FastAPI(title="UCC voice pipeline", lifespan=lifespan)
 
 
 @app.get("/health")
 async def health() -> JSONResponse:
+    cfg = _config
+    if cfg is None:
+        return JSONResponse({"status": "starting"}, status_code=503)
     return JSONResponse(
         {
             "status": "ok",
-            "model": NOVA_MODEL,
-            "uccApiBase": UCC_API_BASE,
-            "region": AWS_REGION,
+            "mode": cfg.mode,
+            "model": cfg.nova_sonic_model_id if cfg.mode == "s2s" else cfg.bedrock_model_id,
+            "stt": cfg.stt_provider if cfg.is_cascaded else None,
+            "tts": cfg.tts_provider if cfg.is_cascaded else None,
+            "uccApiBase": cfg.ucc_api_base,
+            "region": cfg.aws_region,
         }
     )
 
 
-SYSTEM_PROMPT = """You are the Infinize University contact centre assistant, speaking on a phone call.
-
-Keep replies short and natural - one or two sentences. This is speech, not a document.
-
-You know nothing about any caller's application, fees or admission status except what the
-tools return. Never guess, never infer, and never repeat a value a caller supplies as if you
-had confirmed it.
-
-Use search_public_knowledge for general questions about admissions, programmes, documents,
-deadlines, fees, scholarships, hostel and campus life.
-
-For anything specific to one person, call the relevant tool. If a tool tells you identity
-verification is required, say so plainly and offer to send a passcode - do not invent your
-own verification questions.
-
-If the caller asks for a human, or you cannot help, call request_human_agent."""
-
-
-def _to_function_schema(spec: dict[str, Any]) -> FunctionSchema:
+def bind_session(start_frame: dict[str, Any]) -> tuple[str, str, str, str, str]:
     """
-    Convert a UCC tool spec into Pipecat's schema.
+    Extract and validate the identifiers a governed session requires.
 
-    UCC serves Bedrock Converse shapes (inputSchema.json), which are plain JSON Schema, so
-    this is a rename rather than a translation. Keeping the conversion here means the
-    catalogue still has exactly one definition, on the UCC side.
+    Raises ValueError if either required parameter is missing. A stream with no case id
+    cannot be traced, gated or ticketed, and one with no session token cannot execute a
+    tool — running either would be an ungoverned conversation with a real caller
+    (FR-006, FR-028).
     """
-    json_schema = spec.get("inputSchema", {}).get("json", {}) or {}
-    return FunctionSchema(
-        name=spec["name"],
-        description=spec.get("description", ""),
-        properties=json_schema.get("properties", {}) or {},
-        required=json_schema.get("required", []) or [],
+    start = start_frame.get("start") or {}
+    custom = start.get("customParameters") or {}
+
+    ucc_call_id = (custom.get("uccCallId") or "").strip()
+    session_token = (custom.get("sessionToken") or "").strip()
+
+    missing = [
+        name
+        for name, value in (("uccCallId", ucc_call_id), ("sessionToken", session_token))
+        if not value
+    ]
+    if missing:
+        raise ValueError(f"stream start is missing: {', '.join(missing)}")
+
+    return (
+        start.get("streamSid", ""),
+        start.get("callSid", ""),
+        ucc_call_id,
+        (custom.get("tenantId") or "").strip(),
+        session_token,
     )
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
-    ucc = UccClient(UCC_API_BASE)
+
+    cfg = _config
+    if cfg is None:  # pragma: no cover - lifespan always runs first in practice
+        await websocket.close(code=WS_POLICY_VIOLATION)
+        return
+
+    # Twilio sends two preamble frames before any audio: 'connected', then 'start'.
+    await websocket.receive_text()
+    start_frame = json.loads(await websocket.receive_text())
 
     try:
-        # Twilio sends two preamble frames before audio: 'connected' then 'start'.
-        await websocket.receive_text()
-        start_raw = await websocket.receive_text()
-        start = json.loads(start_raw)
+        stream_sid, call_sid, ucc_call_id, tenant_id, session_token = bind_session(start_frame)
+    except (ValueError, json.JSONDecodeError) as exc:
+        logger.error(
+            "refusing ungoverned voice session",
+            extra={"ucc": {"reason": str(exc), "callSid": (start_frame.get("start") or {}).get("callSid")}},
+        )
+        await websocket.close(code=WS_POLICY_VIOLATION)
+        return
 
-        stream_sid = start["start"]["streamSid"]
-        call_sid = start["start"]["callSid"]
-        custom = start["start"].get("customParameters", {}) or {}
-        ucc_call_id = custom.get("uccCallId")
+    log = CallLogger(ucc_call_id, cfg.mode)
+    log.info("voice session start", callSid=call_sid, tenantId=tenant_id)
 
-        if not ucc_call_id:
-            # Without the case id nothing can be traced, gated or ticketed. Refuse rather
-            # than run an ungoverned conversation.
-            logger.error("No uccCallId on stream start for call %s; closing", call_sid)
-            await websocket.close(code=1008)
+    ucc = UccClient(cfg.ucc_api_base, cfg.service_token, session_token, logger=log)
+    bridge = ToolBridge(ucc, ucc_call_id, log)
+
+    try:
+        # The catalogue is fetched, never copied, so it cannot drift from UCC's definition.
+        # If it cannot be fetched there are no tools, and an assistant that can only talk —
+        # unable to retrieve, verify or escalate — is exactly the ungoverned conversation
+        # this service refuses to hold (FR-046).
+        try:
+            specs = await ucc.tool_specs()
+        except Exception as exc:
+            log.error("tool catalogue unavailable; refusing session", reason=type(exc).__name__)
+            await websocket.close(code=WS_POLICY_VIOLATION)
             return
 
-        logger.info("Voice session start call=%s uccCall=%s", call_sid, ucc_call_id)
+        log.info("tool catalogue loaded", toolCount=len(specs))
+        tools = to_tools_schema(specs)
 
         serializer = TwilioFrameSerializer(
             stream_sid=stream_sid,
             call_sid=call_sid,
-            account_sid=TWILIO_ACCOUNT_SID,
-            auth_token=TWILIO_AUTH_TOKEN,
+            account_sid=cfg.twilio_account_sid or None,
+            auth_token=cfg.twilio_auth_token or None,
             # UCC decides when a call ends, and an escalation must keep the line open for
-            # the transfer. Auto hang-up would drop the caller mid-handoff.
-            auto_hang_up=False,
+            # the transfer. Auto hang-up would drop the caller mid-handoff — this is the
+            # failure that cost a live call once already.
+            params=TwilioFrameSerializer.InputParams(auto_hang_up=False),
         )
 
         transport = FastAPIWebsocketTransport(
@@ -153,76 +208,38 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             ),
         )
 
-        llm = AWSNovaSonicLLMService(
-            region=AWS_REGION,
-            model=NOVA_MODEL,
-            voice_id=os.getenv("NOVA_SONIC_VOICE", "tiffany"),
-        )
+        llm = build_llm(cfg, tools)
+        bridge.register_all(llm, specs)
 
-        # --- tools: fetched from UCC, executed by UCC -----------------------
-        specs = await ucc.tool_specs()
-        logger.info("Loaded %d tool specs from UCC", len(specs))
-
-        escalated = {"value": False}
-
-        def make_handler(tool_name: str):
-            async def handler(params):  # Pipecat FunctionCallParams
-                args = params.arguments or {}
-                logger.info("tool -> %s %s", tool_name, args)
-                res = await ucc.execute_tool(ucc_call_id, tool_name, args)
-
-                if res.get("escalated"):
-                    escalated["value"] = True
-
-                # The model receives exactly what the gate returned. A denial is data, not
-                # an error to be smoothed over.
-                await params.result_callback(res.get("data", {}))
-
-            return handler
-
-        for spec in specs:
-            llm.register_function(spec["name"], make_handler(spec["name"]))
-
-        tools = ToolsSchema(standard_tools=[_to_function_schema(s) for s in specs])
-        context = OpenAILLMContext(
-            messages=[{"role": "system", "content": SYSTEM_PROMPT}],
-            tools=tools,
-        )
-        context_aggregator = llm.create_context_aggregator(context)
-
-        pipeline = Pipeline(
-            [
-                transport.input(),
-                context_aggregator.user(),
-                llm,
-                transport.output(),
-                context_aggregator.assistant(),
-            ]
-        )
+        context = build_context(tools, cfg)
+        aggregators = LLMContextAggregatorPair(context)
 
         task = PipelineTask(
-            pipeline,
+            Pipeline(build_processors(cfg, transport, llm, aggregators)),
             params=PipelineParams(
-                audio_in_sample_rate=8000,    # Twilio Media Streams is 8kHz mu-law
-                audio_out_sample_rate=24000,  # Nova Sonic emits 24kHz
+                audio_in_sample_rate=TWILIO_SAMPLE_RATE,
+                audio_out_sample_rate=AUDIO_OUT_SAMPLE_RATE,
                 allow_interruptions=True,
+                enable_metrics=True,
             ),
+            observers=[MetricsObserver(log, cfg.mode)],
         )
 
         @transport.event_handler("on_client_disconnected")
         async def on_disconnected(_transport, _client):
-            logger.info("Caller disconnected uccCall=%s", ucc_call_id)
+            log.info("caller disconnected")
             await task.queue_frames([EndFrame()])
 
         await PipelineRunner(handle_sigint=False).run(task)
 
-        # The TwiML <Connect> action URL performs the actual transfer; UCC already knows
-        # the ticket is escalated because the tool call went through it.
-        logger.info("Session ended uccCall=%s escalated=%s", ucc_call_id, escalated["value"])
-        if not escalated["value"]:
-            await ucc.end_call(ucc_call_id)
+        # On escalation the call is still live and the TwiML action URL performs the
+        # transfer. Ending it here would drop the caller mid-handoff.
+        log.info("voice session ended", escalated=bridge.escalated)
+        if not bridge.escalated:
+            await ucc.end_call(ucc_call_id, "COMPLETED")
 
     except Exception:
-        logger.exception("Voice session failed")
+        log.exception("voice session failed")
+        await ucc.end_call(ucc_call_id, "FAILED")
     finally:
         await ucc.close()
