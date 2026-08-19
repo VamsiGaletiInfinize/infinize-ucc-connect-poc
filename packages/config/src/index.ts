@@ -57,6 +57,21 @@ const schema = z.object({
 
   /** Storage backend selection: 'dynamodb' | 'memory'. */
   UCC_PERSISTENCE: z.enum(['dynamodb', 'memory']).default('memory'),
+  /**
+   * Who owns queueing and agent selection.
+   *
+   *   'ucc'        UCC decides the department AND the agent, then asks the provider to
+   *                connect that specific person. One source of truth for agent state.
+   *   'taskrouter' Twilio TaskRouter owns the queue and picks the worker; UCC supplies
+   *                only the department.
+   *
+   * The POC defaults to 'ucc'. Running both at once caused a real defect: UCC assigned an
+   * agent and reported AGENT_CONNECTED while TaskRouter had no worker registered, so the
+   * supervisor dashboard showed a connection that did not exist and the caller was never
+   * transferred. Agent state must have exactly one owner.
+   */
+  UCC_ROUTING: z.enum(['ucc', 'taskrouter']).default('ucc'),
+
   /** Telephony backend selection: 'twilio' | 'connect' | 'simulated'. */
   UCC_TELEPHONY: z.enum(['twilio', 'connect', 'simulated']).default('simulated'),
   /** Retrieval backend: 'bedrock' uses live Titan embeddings; 'lexical' is an offline fallback. */

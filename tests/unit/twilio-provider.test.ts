@@ -8,7 +8,8 @@ import { TwilioProvider } from '../../services/telephony/src/twilio-provider.ts'
  *
  * The properties that matter:
  *   - UCC correlation ids survive onto the provider, or a call cannot be traced back
- *   - UCC never selects an agent — it hands a department to TaskRouter and stops
+ *   - in TaskRouter mode, UCC hands over a department and never names an agent
+ *   - in UCC mode, no TaskRouter task is created at all
  *   - missing configuration fails loudly rather than half-working
  *   - phone numbers are not written to logs
  */
@@ -61,6 +62,7 @@ function fakeTwilio(overrides: { recordings?: unknown[] } = {}) {
   return { client, captured };
 }
 
+/** TaskRouter-owned routing (useTaskRouter = true). */
 const make = (client: Twilio) =>
   new TwilioProvider(
     'AC_test',
@@ -69,6 +71,20 @@ const make = (client: Twilio) =>
     'WS_test',
     'WW_test',
     'https://ucc.example.test',
+    true,
+    client,
+  );
+
+/** UCC-owned routing (useTaskRouter = false). */
+const makeUccRouted = (client: Twilio) =>
+  new TwilioProvider(
+    'AC_test',
+    'unused-token',
+    '+15550000000',
+    'WS_test',
+    'WW_test',
+    'https://ucc.example.test',
+    false,
     client,
   );
 
@@ -157,7 +173,7 @@ describe('TwilioProvider', () => {
 
   it('fails loudly when TaskRouter is not configured, rather than half-routing', async () => {
     const { client } = fakeTwilio();
-    const p = new TwilioProvider('AC_test', 'tok', '+15550000000', undefined, undefined, 'https://x.test', client);
+    const p = new TwilioProvider('AC_test', 'tok', '+15550000000', undefined, undefined, 'https://x.test', true, client);
     await expect(
       p.transferToQueue({ providerContactId: 'CA_live', queueId: 'dept-admissions' }),
     ).rejects.toThrow(/TWILIO_WORKSPACE_SID/);
@@ -165,7 +181,7 @@ describe('TwilioProvider', () => {
 
   it('fails loudly when no public base URL is set for outbound', async () => {
     const { client } = fakeTwilio();
-    const p = new TwilioProvider('AC_test', 'tok', '+15550000000', 'WS', 'WW', undefined, client);
+    const p = new TwilioProvider('AC_test', 'tok', '+15550000000', 'WS', 'WW', undefined, true, client);
     await expect(
       p.startOutboundContact({ destinationPhoneNumber: '+919812340005', attributes: {} }),
     ).rejects.toThrow(/PUBLIC_BASE_URL/);
@@ -187,5 +203,37 @@ describe('TwilioProvider', () => {
     const all = logged.join('\n');
     expect(all).not.toContain('+919812340005');
     expect(all).not.toContain('9812340005');
+  });
+  describe('when UCC owns routing', () => {
+    it('creates no TaskRouter task — UCC already picked the agent', async () => {
+      const { client, captured } = fakeTwilio();
+      await makeUccRouted(client).transferToQueue({
+        providerContactId: 'CA_live',
+        queueId: 'dept-admissions',
+      });
+      // A task nobody consumes would leave an orphaned reservation and a second,
+      // competing view of agent state — the defect that motivated this switch.
+      expect(captured.tasks).toHaveLength(0);
+    });
+
+    it('queues a callback without TaskRouter', async () => {
+      const { client, captured } = fakeTwilio();
+      const res = await makeUccRouted(client).createCallback({
+        providerContactId: 'CA_orig',
+        queueId: 'dept-general',
+        destinationPhoneNumber: '+919812340003',
+        scheduledFor: '2026-08-19T10:00:00.000Z',
+      });
+      expect(captured.tasks).toHaveLength(0);
+      expect(res.callbackContactId).toContain('CA_orig');
+    });
+
+    it('still ends calls and reads recordings normally', async () => {
+      const { client, captured } = fakeTwilio({ recordings: [{ sid: 'RE_1', duration: '10' }] });
+      const p = makeUccRouted(client);
+      await p.stopContact({ providerContactId: 'CA_end' });
+      expect(captured.calls.endedSid).toBe('CA_end');
+      expect(await p.getRecordingLocation({ providerContactId: 'CA_end' })).not.toBeNull();
+    });
   });
 });

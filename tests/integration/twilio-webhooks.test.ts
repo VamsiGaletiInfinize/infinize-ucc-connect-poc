@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import twilio from 'twilio';
 import type { FastifyInstance } from 'fastify';
-import { createHarness, PHONE, type TestHarness } from '../helpers.ts';
+import { resetConfig } from '@ucc/config';
+import { createHarness, PHONE, startCall, type TestHarness } from '../helpers.ts';
 import { createServer } from '../../apps/ucc-api/src/server.ts';
 
 /**
@@ -47,6 +48,9 @@ describe('Twilio voice webhooks', () => {
     process.env.TWILIO_AUTH_TOKEN = AUTH_TOKEN;
     process.env.PUBLIC_BASE_URL = BASE;
     delete process.env.TWILIO_SKIP_SIGNATURE_CHECK;
+    // Default routing for this suite; individual tests override and reset.
+    process.env.UCC_ROUTING = 'ucc';
+    resetConfig();
 
     h = await createHarness();
     app = await createServer(h);
@@ -124,22 +128,84 @@ describe('Twilio voice webhooks', () => {
     expect(calls).toHaveLength(1);
   });
 
-  it('enqueues to TaskRouter when the AI hands off after an escalation', async () => {
-    const res = await post(app, '/twilio/voice/handoff', {
-      CallSid: 'CA_escalated',
-      HandoffData: JSON.stringify({
-        reason: 'ESCALATED',
-        uccCallId: 'call_x',
-        departmentId: 'dept-admissions',
-      }),
+  describe('escalation handoff — UCC owns routing (default)', () => {
+    it('dials the specific agent UCC already assigned', async () => {
+      // Drive a real escalation so the ticket carries a genuine assignment.
+      const { call, ticket } = await startCall(h, PHONE.applicantTwoApps, 'CA_ucc_route');
+      const result = await h.routing.escalate({
+        tenantId: h.tenantId,
+        uccCallId: call.id,
+        uccTicketId: ticket.id,
+        category: 'ADMISSIONS_SUPPORT',
+        reason: 'wants an adviser',
+        traceId: call.traceId,
+      });
+      expect(result.agent).toBeTruthy();
+
+      const res = await post(app, '/twilio/voice/handoff', {
+        CallSid: 'CA_ucc_route',
+        HandoffData: JSON.stringify({ reason: 'ESCALATED', uccCallId: call.id }),
+      });
+
+      const xml = res.body;
+      // The caller is bridged to the person UCC chose — no queue indirection.
+      expect(xml).toContain('<Dial');
+      expect(xml).toContain(`<Client>${result.agent!.id}</Client>`);
+      expect(xml).not.toContain('<Enqueue');
+      // A ringing browser nobody answers must not strand the caller.
+      expect(xml).toMatch(/timeout="\d+"/);
     });
 
-    expect(res.statusCode).toBe(200);
-    const xml = res.body;
-    expect(xml).toContain('<Enqueue');
-    // UCC supplies the department; TaskRouter picks the worker.
-    expect(xml).toContain('dept-admissions');
-    expect(xml).not.toMatch(/agent-[a-z]+/);
+    it('tells the caller the truth when no agent is free', async () => {
+      for (const a of await h.repos.agent.list(h.tenantId)) {
+        await h.agents.setStatus(h.tenantId, a.id, 'OFFLINE');
+      }
+      const { call, ticket } = await startCall(h, PHONE.student, 'CA_none_free');
+      await h.routing.escalate({
+        tenantId: h.tenantId,
+        uccCallId: call.id,
+        uccTicketId: ticket.id,
+        category: 'ADMISSIONS_SUPPORT',
+        reason: 'nobody free',
+        traceId: call.traceId,
+      });
+
+      const res = await post(app, '/twilio/voice/handoff', {
+        CallSid: 'CA_none_free',
+        HandoffData: JSON.stringify({ reason: 'ESCALATED', uccCallId: call.id }),
+      });
+
+      expect(res.body).toMatch(/call you back/i);
+      expect(res.body).toContain('<Hangup');
+      expect(res.body).not.toContain('<Dial');
+    });
+  });
+
+  describe('escalation handoff — TaskRouter owns routing', () => {
+    beforeEach(async () => {
+      process.env.UCC_ROUTING = 'taskrouter';
+      process.env.TWILIO_WORKFLOW_SID = 'WW_test';
+      resetConfig();
+      app = await createServer(h);
+      await app.ready();
+    });
+
+    it('enqueues the department and names no agent', async () => {
+      const res = await post(app, '/twilio/voice/handoff', {
+        CallSid: 'CA_escalated',
+        HandoffData: JSON.stringify({
+          reason: 'ESCALATED',
+          uccCallId: 'call_x',
+          departmentId: 'dept-admissions',
+        }),
+      });
+
+      const xml = res.body;
+      expect(xml).toContain('<Enqueue');
+      expect(xml).toContain('dept-admissions');
+      // TaskRouter picks the worker; UCC must not name one.
+      expect(xml).not.toMatch(/agent-[a-z]+/);
+    });
   });
 
   it('says goodbye and hangs up when the AI resolved without escalating', async () => {

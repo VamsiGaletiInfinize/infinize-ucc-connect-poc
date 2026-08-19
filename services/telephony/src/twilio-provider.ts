@@ -22,12 +22,21 @@ import type { TelephonyProvider } from './provider.ts';
  * third-party model. Twilio sees the audio because it is the carrier; it would see it on
  * any telephony path.
  *
- * BOUNDARY DISCIPLINE
- * -------------------
- * The ownership rule from the constitution is unchanged, only the provider differs: the
- * platform owns queueing and agent selection, UCC decides only *which department* a
- * contact belongs to. `transferToQueue` hands the contact to TaskRouter and TaskRouter's
- * workflow picks the worker — UCC never selects an agent itself.
+ * WHO OWNS QUEUEING — CONFIGURABLE
+ * --------------------------------
+ * `UCC_ROUTING` selects between two models, and only one may be active:
+ *
+ *   'ucc'         UCC picks the department AND the agent, using the queue, presence and
+ *                 capacity rules in `services/routing`. Twilio is asked only to connect
+ *                 the call to that person. `transferToQueue` becomes a no-op here.
+ *
+ *   'taskrouter'  TaskRouter owns the queue and selects the worker; UCC supplies only the
+ *                 department. This matches the original Amazon Connect boundary.
+ *
+ * Running both produced a real defect: UCC assigned an agent and reported AGENT_CONNECTED
+ * while TaskRouter had no worker registered, so the supervisor dashboard showed a
+ * connection that did not exist and the caller was never transferred. Agent state must
+ * have exactly one owner.
  *
  * Activated by `UCC_TELEPHONY=twilio` with `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`.
  */
@@ -42,6 +51,12 @@ export class TwilioProvider implements TelephonyProvider {
     private readonly workspaceSid: string | undefined,
     private readonly workflowSid: string | undefined,
     private readonly publicBaseUrl: string | undefined,
+    /**
+     * True only when TaskRouter owns queueing. When UCC owns it, this adapter must not
+     * create TaskRouter tasks — a task nobody consumes leaves an orphaned reservation and
+     * a second, competing view of agent state.
+     */
+    private readonly useTaskRouter: boolean,
     client?: Twilio,
   ) {
     this.client = client ?? twilio(accountSid, authToken);
@@ -101,6 +116,16 @@ export class TwilioProvider implements TelephonyProvider {
    * recommended bridging pattern.
    */
   async transferToQueue(params: { providerContactId: string; queueId: string }): Promise<void> {
+    if (!this.useTaskRouter) {
+      // UCC has already chosen the department AND the agent. The live call is bridged to
+      // that specific person by the handoff TwiML (`<Dial><Client>`), so there is nothing
+      // to enqueue here. Creating a task anyway would fork agent state.
+      logger.info('Queue transfer handled by UCC routing; no TaskRouter task created', {
+        providerContactId: params.providerContactId,
+        queueId: params.queueId,
+      });
+      return;
+    }
     if (!this.workspaceSid || !this.workflowSid) {
       throw new UccError(
         'CONFIGURATION_ERROR',
@@ -140,6 +165,16 @@ export class TwilioProvider implements TelephonyProvider {
     destinationPhoneNumber: string;
     scheduledFor: string;
   }): Promise<{ callbackContactId: string }> {
+    if (!this.useTaskRouter) {
+      // UCC already persists the callback and owns its lifecycle; the outbound leg is
+      // placed when an agent accepts it.
+      const id = `ucc-callback:${params.providerContactId}`;
+      logger.info('Callback queued by UCC routing', {
+        callbackContactId: id,
+        queueId: params.queueId,
+      });
+      return { callbackContactId: id };
+    }
     if (!this.workspaceSid || !this.workflowSid) {
       throw new UccError(
         'CONFIGURATION_ERROR',

@@ -31,9 +31,15 @@ export function createTelephonyProvider(): TelephonyProvider {
           'Refusing to fall back to the simulator silently.',
       );
     }
+    const useTaskRouter = cfg.UCC_ROUTING === 'taskrouter';
+    if (useTaskRouter && !cfg.TWILIO_WORKSPACE_SID) {
+      throw new Error(
+        'UCC_ROUTING=taskrouter requires TWILIO_WORKSPACE_SID and TWILIO_WORKFLOW_SID.',
+      );
+    }
     logger.info('Telephony provider: Twilio (live)', {
       phoneNumber: cfg.TWILIO_PHONE_NUMBER ? 'configured' : 'MISSING',
-      taskRouter: cfg.TWILIO_WORKSPACE_SID ? 'configured' : 'not configured',
+      routing: useTaskRouter ? 'TaskRouter owns the queue' : 'UCC owns the queue',
     });
     return new TwilioProvider(
       cfg.TWILIO_ACCOUNT_SID,
@@ -42,6 +48,7 @@ export function createTelephonyProvider(): TelephonyProvider {
       cfg.TWILIO_WORKSPACE_SID,
       cfg.TWILIO_WORKFLOW_SID,
       cfg.PUBLIC_BASE_URL,
+      useTaskRouter,
     );
   }
 

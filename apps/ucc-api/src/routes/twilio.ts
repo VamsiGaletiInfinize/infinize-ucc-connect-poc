@@ -308,24 +308,89 @@ export function registerTwilioRoutes(app: FastifyInstance, c: Container): void {
     }
 
     if (handoff.reason === 'ESCALATED' || handoff.reason === 'AI_FAILURE') {
-      response.say(
-        { voice: 'Polly.Aditi' },
-        'Please hold while I connect you to the next available adviser.',
-      );
-      // TaskRouter owns queueing and agent selection.
-      response.enqueue({ workflowSid: cfg.TWILIO_WORKFLOW_SID }).task(
-        JSON.stringify({
-          department: handoff.departmentId ?? 'dept-general',
-          ucc_call_id: handoff.uccCallId,
-          type: 'voice',
-        }),
-      );
+      if (cfg.UCC_ROUTING === 'taskrouter') {
+        // TaskRouter owns the queue and picks the worker.
+        response.say(
+          { voice: 'Polly.Aditi' },
+          'Please hold while I connect you to the next available adviser.',
+        );
+        response.enqueue({ workflowSid: cfg.TWILIO_WORKFLOW_SID }).task(
+          JSON.stringify({
+            department: handoff.departmentId ?? 'dept-general',
+            ucc_call_id: handoff.uccCallId,
+            type: 'voice',
+          }),
+        );
+      } else {
+        // UCC routing: the agent was already chosen during escalation, so connect this
+        // caller to that specific person. Reading the ticket rather than trusting
+        // handoffData keeps the decision with the system that owns agent state.
+        const agentId = handoff.uccCallId
+          ? (await c.repos.ticket.byCallId(c.tenantId, handoff.uccCallId))?.assignedAgentId
+          : undefined;
+
+        if (agentId) {
+          response.say({ voice: 'Polly.Aditi' }, 'Connecting you now.');
+          // A ringing browser that nobody answers must not strand the caller, so the dial
+          // is time-boxed and falls through to the no-answer handler.
+          const dial = response.dial({
+            timeout: 25,
+            action: `${cfg.PUBLIC_BASE_URL}/twilio/voice/agent-dial-status`,
+            method: 'POST',
+          });
+          dial.client(agentId);
+          logger.info('Bridging caller to UCC-selected agent', {
+            uccCallId: handoff.uccCallId,
+            agentId,
+          });
+        } else {
+          // No agent free. Say so plainly and end; the callback already exists in UCC.
+          response.say(
+            { voice: 'Polly.Aditi' },
+            'All our advisers are busy right now. We have logged your request and will call you back shortly.',
+          );
+          response.hangup();
+          logger.info('Escalation with no available agent; callback path', {
+            uccCallId: handoff.uccCallId,
+          });
+        }
+      }
     } else {
       response.say({ voice: 'Polly.Aditi' }, 'Thank you for calling Infinize University. Goodbye.');
       response.hangup();
     }
 
     reply.type('text/xml').send(response.toString());
+  });
+
+  /**
+   * Outcome of dialling the agent's browser.
+   *
+   * If the agent did not answer, the caller must not be left listening to nothing. The
+   * ticket is returned to the queue and the caller is told the truth.
+   */
+  app.post('/twilio/voice/agent-dial-status', async (request, reply) => {
+    assertTwilioSignature(request);
+
+    const body = (request.body ?? {}) as Record<string, string>;
+    const response = new twilio.twiml.VoiceResponse();
+
+    if (body.DialCallStatus === 'completed') {
+      // The agent took the call and it has now ended.
+      response.hangup();
+      return reply.type('text/xml').send(response.toString());
+    }
+
+    logger.warn('Agent did not answer the escalated call', {
+      callSid: body.CallSid,
+      dialStatus: body.DialCallStatus,
+    });
+    response.say(
+      { voice: 'Polly.Aditi' },
+      'Sorry, our adviser could not pick up. We have kept your case open and will call you back.',
+    );
+    response.hangup();
+    return reply.type('text/xml').send(response.toString());
   });
 
   /** Call progress events, normalized onto the UCC timeline. */
