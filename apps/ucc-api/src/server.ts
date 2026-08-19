@@ -1,5 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import formbody from '@fastify/formbody';
+import websocket from '@fastify/websocket';
 import { config } from '@ucc/config';
 import { logger, newTraceId } from '@ucc/shared';
 import { UccError, InvalidTicketTransitionError } from '@ucc/types';
@@ -9,9 +11,15 @@ import { registerCallRoutes } from './routes/calls.ts';
 import { registerTicketRoutes } from './routes/tickets.ts';
 import { registerApplicationRoutes } from './routes/applications.ts';
 import { registerOperationRoutes } from './routes/operations.ts';
+import { registerTwilioRoutes } from './routes/twilio.ts';
 
 export async function createServer(c: Container): Promise<FastifyInstance> {
   const app = Fastify({ logger: false, bodyLimit: 1_048_576 });
+
+  // Twilio posts webhooks as application/x-www-form-urlencoded, and ConversationRelay
+  // needs a websocket. Both are registered before routes so the decorators exist.
+  await app.register(formbody);
+  await app.register(websocket);
 
   await app.register(cors, {
     origin: config().corsOrigins,
@@ -118,6 +126,7 @@ export async function createServer(c: Container): Promise<FastifyInstance> {
   registerTicketRoutes(app, c);
   registerApplicationRoutes(app, c);
   registerOperationRoutes(app, c);
+  registerTwilioRoutes(app, c);
 
   return app;
 }
