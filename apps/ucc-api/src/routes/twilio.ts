@@ -197,8 +197,9 @@ export function registerTwilioRoutes(app: FastifyInstance, c: Container): void {
         }
 
         case 'prompt': {
-          // Field name differs across Twilio doc revisions; accept either.
-          const utterance = String(msg.text ?? msg.voicePrompt ?? '').trim();
+          // Documented field is `voicePrompt`; `text` kept as a fallback in case the
+          // shape varies across ConversationRelay revisions.
+          const utterance = String(msg.voicePrompt ?? msg.text ?? '').trim();
           // Partial transcripts arrive with last=false; only act on the finished utterance.
           if (!utterance || msg.last === false) return;
           if (!uccCallId) {
@@ -221,10 +222,14 @@ export function registerTwilioRoutes(app: FastifyInstance, c: Container): void {
               onComplete: (result) => {
                 speak('', true);
                 if (result.escalated) {
-                  // Twilio posts handoffData to the action URL, where routing happens.
+                  // `end` — NOT `end_session`. An unknown type is rejected with an error
+                  // frame and the session stays open, which strands the caller listening
+                  // to reassurances that a transfer already happened. handoffData must be
+                  // a STRING, so it is JSON-encoded.
                   send({
-                    type: 'end_session',
+                    type: 'end',
                     handoffData: JSON.stringify({
+                      reasonCode: 'live-agent-handoff',
                       reason: 'ESCALATED',
                       uccCallId,
                       uccTicketId: result.ticketId,
@@ -242,8 +247,12 @@ export function registerTwilioRoutes(app: FastifyInstance, c: Container): void {
             });
             speak('I am having trouble reaching our systems. Let me pass you to a colleague.', true);
             send({
-              type: 'end_session',
-              handoffData: JSON.stringify({ reason: 'AI_FAILURE', uccCallId }),
+              type: 'end',
+              handoffData: JSON.stringify({
+                reasonCode: 'live-agent-handoff',
+                reason: 'AI_FAILURE',
+                uccCallId,
+              }),
             });
           } finally {
             turnInFlight = false;
@@ -257,10 +266,11 @@ export function registerTwilioRoutes(app: FastifyInstance, c: Container): void {
         }
 
         case 'error': {
+          // Log the whole frame: field names have varied, and a rejection with no detail
+          // attached cost us a live call once already.
           logger.error('ConversationRelay reported an error', {
             uccCallId,
-            errorCode: msg.errorCode,
-            errorMessage: msg.errorMessage,
+            payload: JSON.stringify(msg).slice(0, 500),
           });
           return;
         }
