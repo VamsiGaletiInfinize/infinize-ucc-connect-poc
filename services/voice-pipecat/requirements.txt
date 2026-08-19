@@ -1,10 +1,23 @@
 # Pipecat with the pieces this pipeline actually uses:
-#   aws      -> Amazon Nova Sonic speech-to-speech on Bedrock
-#   silero   -> voice activity detection for turn-taking
-#   twilio   -> TwilioFrameSerializer for Media Streams
-#   webrtc   -> audio resampling helpers
-pipecat-ai[aws,silero,twilio,webrtc]==1.0.0
+#   aws              -> Amazon Transcribe (STT), Bedrock (LLM), Polly (TTS) for the
+#                       cascaded topology, via aioboto3
+#   aws-nova-sonic   -> Amazon Nova Sonic speech-to-speech for the s2s topology.
+#                       SEPARATE from [aws]: it pulls aws_sdk_bedrock_runtime, and without
+#                       it importing the Nova Sonic service raises ModuleNotFoundError.
+#                       This dependency is gated on python_version >= "3.12", which is why
+#                       .python-version pins 3.12.
+#   silero           -> voice activity detection for turn-taking (onnxruntime)
+#   webrtc           -> audio resampling helpers
+#
+# There is deliberately no `twilio` extra: pipecat-ai 1.0.0 does not define one and uv
+# silently ignores it. The TwilioFrameSerializer ships in core and reaches the Twilio REST
+# API through aiohttp, which we do not need because auto_hang_up is disabled.
+pipecat-ai[aws,aws-nova-sonic,silero,webrtc]==1.0.0
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 httpx==0.28.1
 python-dotenv==1.0.1
+
+# Tests
+pytest==8.3.4
+pytest-asyncio==0.25.2
