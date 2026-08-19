@@ -366,8 +366,8 @@ the caller hears an appropriate sentence and the case reflects the failure.
 - **FR-029**: The per-call token MUST expire, and MUST be rejected after the call it belongs
   to has ended.
 - **FR-030**: The service MUST refuse to start if the service credential is absent.
-- **FR-031**: Credentials and secrets MUST come from the environment, MUST NOT be committed,
-  and MUST NOT appear in logs or any browser-delivered asset.
+- **FR-031**: Credentials and secrets MUST be sourced from the environment and MUST NOT be
+  committed to the repository or delivered to a browser. (Log hygiene is FR-037.)
 - **FR-032**: Inbound webhooks MUST remain signature-verified. Any bypass MUST be an
   explicit, loudly-logged, local-only opt-in.
 
@@ -400,6 +400,28 @@ the caller hears an appropriate sentence and the case reflects the failure.
   in automated tests.
 - **FR-045**: Documentation MUST distinguish what has been executed and verified from what
   has only been implemented.
+
+**Scenarios added after cross-artifact analysis**
+
+These six were surfaced by the security checklist as scenarios the requirements neither
+specified nor excluded. Five are now specified; the sixth is explicitly excluded in
+Assumptions.
+
+- **FR-046**: If the tool catalogue cannot be fetched at session start, the system MUST
+  refuse the session rather than run a conversation with no tools. An assistant that can
+  only talk, with no ability to retrieve or verify, is precisely the ungoverned conversation
+  FR-006 exists to prevent.
+- **FR-047**: The per-call token's lifetime MUST exceed the maximum supported call duration.
+  If a token nevertheless expires mid-call, the tool call MUST be refused and the call
+  escalated — never silently retried and never allowed to proceed unauthorised.
+- **FR-048**: When a session is refused, the caller MUST hear a brief spoken explanation and
+  the call MUST be ended deliberately. A refused session MUST NOT leave the caller listening
+  to silence.
+- **FR-049**: The voice leg's conversation MUST be captured into the existing transcript, so
+  an escalated case reaches the agent with its AI segment present rather than empty.
+- **FR-050**: A mismatch between the service credential held by the voice service and the one
+  held by UCC MUST be detected at startup, not on the first tool call of the first real
+  caller.
 
 ### Key Entities
 
@@ -506,6 +528,16 @@ the caller hears an appropriate sentence and the case reflects the failure.
   rather than replacing one.
 - "Measured" means a fixed script of caller utterances, run over both topologies against the
   same number, with at least 5 calls per topology, reporting median and worst observed.
+- Two distinct scripted corpora are required and must not be conflated: a **latency corpus**
+  (5 calls per topology, driving SC-002 through SC-005 and SC-011) and a **security corpus**
+  (at least 10 calls, driving SC-006, SC-007 and SC-009). They measure different things and a
+  single run cannot serve both.
+- **DTMF passcode entry is out of scope**, and this is a deliberate exclusion rather than an
+  oversight. Real callers routinely key a code rather than speak it, so this is the first
+  thing to add before any non-demo use. It is excluded here because the POC uses a fixed
+  demo passcode, the existing text path is also speech-only, and wiring keypad capture
+  through to the verification flow is a self-contained feature that would not change any
+  conclusion this POC exists to reach. Recorded as a known limitation, not as done.
 
 **Out of scope**
 

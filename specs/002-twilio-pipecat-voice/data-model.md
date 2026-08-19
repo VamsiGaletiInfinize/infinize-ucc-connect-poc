@@ -84,7 +84,7 @@ than degrading silently (FR-026).
 
 | Key | Values | Default | Notes |
 |---|---|---|---|
-| `UCC_VOICE_MODE` | `cascaded` \| `s2s` | `cascaded` | The Principle XI switch |
+| `UCC_PIPELINE_MODE` | `cascaded` \| `s2s` | `cascaded` | The Principle XI switch |
 | `UCC_STT_PROVIDER` | `aws` | `aws` | Cascaded only. Enum exists so a second value is a config change |
 | `UCC_LLM_PROVIDER` | `bedrock` | `bedrock` | Cascaded only |
 | `UCC_TTS_PROVIDER` | `aws` | `aws` | Cascaded only |
@@ -95,7 +95,7 @@ than degrading silently (FR-026).
 
 **Validation rules**
 
-- `UCC_VOICE_MODE=s2s` with a Nova Sonic model that is unavailable ⇒ fail at startup, not
+- `UCC_PIPELINE_MODE=s2s` with a Nova Sonic model that is unavailable ⇒ fail at startup, not
   on the first call.
 - A provider key naming an unimplemented provider ⇒ fail at startup with the list of
   supported values. Never fall back to the default (FR-026).
@@ -112,7 +112,7 @@ Not persisted by the voice service; produced for logging and handed to UCC for e
 | `name` | string | Must exist in the catalogue fetched at session start |
 | `arguments` | object | Model-supplied. **Untrusted** — validated server-side by UCC |
 | `ucc_call_id` | string | From the session, never from the model |
-| `duration_ms` | number | Round trip, measured in the handler (FR-034) |
+| `duration_ms` | number | Round trip, measured in the handler (FR-035) |
 | `ok` | bool | From the UCC response |
 | `control` | `ESCALATED` \| `CALLBACK_CREATED` \| `VERIFICATION_PENDING` \| null | Drives session state |
 
@@ -134,7 +134,7 @@ The unit SC-002 through SC-005 are measured against.
 | `interrupt_to_silence_ms` | interruption frame to output stop (SC-005) |
 | `tool_ms` | sum of `ToolInvocation.duration_ms` in the turn |
 | `mode` | so cascaded and s2s rows are comparable |
-| `ucc_call_id` | correlation (FR-032) |
+| `ucc_call_id` | correlation (FR-033) |
 
 **Note on comparability:** in `s2s` the first three collapse into `ttf_audio_ms`, because the
 model does all three. Reports MUST NOT present a blank cascaded-style breakdown for s2s as
@@ -142,7 +142,7 @@ if the stages were instantaneous.
 
 ---
 
-## Redaction rules (FR-036)
+## Redaction rules (FR-037)
 
 Never emitted in any log line, in either service:
 

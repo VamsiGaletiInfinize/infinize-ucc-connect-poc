@@ -35,7 +35,7 @@ the system works. Behavioural verification lives in [quickstart.md](../quickstar
 - [ ] CHK013 Are requirements stated for token reuse across two concurrent sessions claiming the same case? [Gap, Edge Case]
 - [ ] CHK014 Is the requirement that `GET /api/ai/tools` needs only the service credential stated in the spec, or only in the contract? [Consistency, Contract voice-bridge-api]
 - [ ] CHK015 Is the threat that the token transits Twilio documented as an accepted risk with its blast radius bounded in writing? [Assumption, Research §R6]
-- [ ] CHK016 Are requirements defined for what the caller experiences when the bridge rejects a tool call for an authentication reason, as distinct from a business denial? [Gap, Spec §FR-039]
+- [ ] CHK016 Are requirements defined for what the caller experiences when the bridge rejects a tool call for an authentication reason, as distinct from a business denial? [Gap, Spec §FR-040]
 - [ ] CHK017 Is the scope boundary explicit that this closes only the voice bridge and not the wider missing end-user authentication? [Clarity, Spec §Assumptions]
 
 ## Session Binding & Refusal
@@ -67,12 +67,12 @@ the system works. Behavioural verification lives in [quickstart.md](../quickstar
 
 ## Log Redaction & Observability
 
-- [ ] CHK036 Is "unnecessary personal data" defined by enumeration rather than left to implementer judgement? [Ambiguity, Spec §FR-036]
+- [ ] CHK036 Is "unnecessary personal data" defined by enumeration rather than left to implementer judgement? [Ambiguity, Spec §FR-037]
 - [ ] CHK037 Are redaction requirements stated for *both* services, given the voice service uses a different logging stack from the UCC API? [Coverage, Data Model §Redaction]
-- [ ] CHK038 Are requirements defined for passcodes appearing inside a transcript fragment, as distinct from a passcode field? [Gap, Edge Case, Spec §FR-036]
+- [ ] CHK038 Are requirements defined for passcodes appearing inside a transcript fragment, as distinct from a passcode field? [Gap, Edge Case, Spec §FR-037]
 - [ ] CHK039 Is there a requirement that latency metrics are reported without implying stages exist in the speech-to-speech mode that do not? [Clarity, Data Model §5]
-- [ ] CHK040 Are the per-stage latency requirements traceable to the success criteria that consume them? [Traceability, Spec §FR-033, §SC-002..§SC-005]
-- [ ] CHK041 Is the correlation-id requirement stated as applying to every log line, including errors raised before the session is bound? [Coverage, Spec §FR-032]
+- [ ] CHK040 Are the per-stage latency requirements traceable to the success criteria that consume them? [Traceability, Spec §FR-034, §SC-002..§SC-005]
+- [ ] CHK041 Is the correlation-id requirement stated as applying to every log line, including errors raised before the session is bound? [Coverage, Spec §FR-033]
 
 ## Fail-Fast Configuration
 
@@ -80,7 +80,7 @@ the system works. Behavioural verification lives in [quickstart.md](../quickstar
 - [ ] CHK043 Is the prohibition on silent fallback stated for *every* configuration key, or only for the pipeline mode? [Coverage, Spec §FR-026]
 - [ ] CHK044 Are requirements defined for detecting a mismatched service credential between the two services at startup rather than on the first tool call? [Gap, Quickstart §Configuration]
 - [ ] CHK045 Is the Python version floor stated as a requirement, given a dependency enforces it? [Traceability, Research §R2]
-- [ ] CHK046 Are timeout values quantified, or is "bounded timeout" left unmeasurable? [Ambiguity, Spec §FR-038]
+- [ ] CHK046 Are timeout values quantified, or is "bounded timeout" left unmeasurable? [Ambiguity, Spec §FR-039]
 
 ## Topology Equivalence — Shared, Not Merely Similar
 
@@ -93,16 +93,16 @@ the system works. Behavioural verification lives in [quickstart.md](../quickstar
 
 ## Verification of the Work Itself
 
-- [ ] CHK053 Is "executed and verified" distinguished from "implemented" by a stated definition, given this distinction is now a constitutional requirement? [Clarity, Spec §FR-044, Constitution §VII]
-- [ ] CHK054 Are the minimum test subjects enumerated specifically enough that a missing one is detectable? [Completeness, Spec §FR-042]
-- [ ] CHK055 Is the requirement for real-phone-call validation scoped to which scenarios must be dialled versus which may be automated? [Clarity, Spec §FR-043]
+- [ ] CHK053 Is "executed and verified" distinguished from "implemented" by a stated definition, given this distinction is now a constitutional requirement? [Clarity, Spec §FR-045, Constitution §VII]
+- [ ] CHK054 Are the minimum test subjects enumerated specifically enough that a missing one is detectable? [Completeness, Spec §FR-043]
+- [ ] CHK055 Is the requirement for real-phone-call validation scoped to which scenarios must be dialled versus which may be automated? [Clarity, Spec §FR-044]
 
 ## Ambiguities, Conflicts & Assumptions
 
 - [ ] CHK056 Is the assumption that the existing gate, verification and knowledge services are correct recorded with a stated consequence if it proves false? [Assumption, Spec §Assumptions]
 - [ ] CHK057 Are requirements defined for DTMF entry of the passcode, given callers commonly key digits rather than speak them? [Gap, Coverage]
 - [ ] CHK058 Is the exclusion of concurrent-call and mid-call-restart requirements stated deliberately rather than by omission? [Gap, Plan §Scale/Scope]
-- [ ] CHK059 Do the requirements conflict anywhere between "refuse to start on bad config" and "degrade safely on failure", and is the boundary between startup and runtime explicit? [Conflict, Spec §FR-026, §FR-040]
+- [ ] CHK059 Do the requirements conflict anywhere between "refuse to start on bad config" and "degrade safely on failure", and is the boundary between startup and runtime explicit? [Conflict, Spec §FR-026, §FR-041]
 
 ---
 

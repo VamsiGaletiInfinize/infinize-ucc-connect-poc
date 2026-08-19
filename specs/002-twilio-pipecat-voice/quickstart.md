@@ -58,13 +58,14 @@ And for the voice service:
 ```bash
 UCC_API_BASE=http://localhost:4000
 UCC_VOICE_SERVICE_TOKEN=<the same value>
-UCC_VOICE_MODE=cascaded          # or s2s
+UCC_PIPELINE_MODE=cascaded          # or s2s
 AWS_REGION=us-east-1
 AWS_PROFILE=<your profile>
 ```
 
-The two `UCC_VOICE_SERVICE_TOKEN` values must match. A mismatch shows up as `401` on the
-first tool call, not at startup.
+The two `UCC_VOICE_SERVICE_TOKEN` values must match. The voice service checks this against
+UCC at startup and refuses to start on a mismatch (FR-050), so you find out before a caller
+does rather than on the first tool call.
 
 ---
 
@@ -105,7 +106,7 @@ cd services/voice-pipecat && .venv/Scripts/python.exe -m pytest -q
 ```
 
 Expected: all pass. Covers tool-schema conversion, the bridge client, session binding,
-config validation and failure handling (FR-042).
+config validation and failure handling (FR-043).
 
 ### V2 — The bridge rejects what it should (no phone needed)
 
@@ -127,7 +128,7 @@ Proves FR-027/FR-028 without a call. A session token bound to a *different* case
 
 ### V3 — Public question, cascaded mode
 
-Set `UCC_VOICE_MODE=cascaded`, restart, dial the number.
+Set `UCC_PIPELINE_MODE=cascaded`, restart, dial the number.
 
 1. You hear the greeting **immediately on answer**, with no silence first.
 2. Ask: *"What documents do I need to apply?"*
@@ -178,7 +179,7 @@ Covers US3 · FR-015..FR-019 · SC-008.
 
 ### V6 — Speech-to-speech mode
 
-Set `UCC_VOICE_MODE=s2s`, restart the voice service **only** — no other change, no code
+Set `UCC_PIPELINE_MODE=s2s`, restart the voice service **only** — no other change, no code
 edit, no Twilio reconfiguration. Re-run V3, V4 and V5.
 
 Everything should behave identically, faster. If anything requires a second change to make
@@ -198,7 +199,7 @@ Report median and worst for each of: time to first transcript, first token, firs
 end-to-end, and interrupt-to-silence. In `s2s` the first three collapse into first-audio —
 report that as collapsed, not as zeros.
 
-Covers US4, US5 · FR-033 · SC-002, SC-003, SC-004, SC-005, SC-011.
+Covers US4, US5 · FR-034 · SC-002, SC-003, SC-004, SC-005, SC-011.
 
 ### V8 — Failure paths
 
@@ -213,7 +214,7 @@ With a call in progress, force each failure in turn:
 
 No response may contain a stack trace, error code or internal id.
 
-Covers US7 · FR-038..FR-040 · SC-015.
+Covers US7 · FR-039..FR-041 · SC-015.
 
 ### V9 — Log hygiene
 
@@ -221,7 +222,7 @@ Covers US7 · FR-038..FR-040 · SC-015.
 grep -iE "123456|Bearer |sessionToken|aws_secret" api.log voice.log
 ```
 
-Expected: **no output**. Any hit is an FR-036 / SC-013 failure.
+Expected: **no output**. Any hit is an FR-037 / SC-013 failure.
 
 ---
 

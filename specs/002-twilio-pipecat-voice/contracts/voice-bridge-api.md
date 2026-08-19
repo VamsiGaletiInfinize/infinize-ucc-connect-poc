@@ -154,4 +154,4 @@ Required failure shape returned to the model:
 1. `uccCallId` in the path always comes from the bound session, never from model arguments.
 2. Tool results are relayed verbatim; never interpreted, cached, softened or substituted.
 3. The service token and session token appear in no log line and no error message.
-4. Every request is bounded by a timeout (FR-038).
+4. Every request is bounded by a timeout (FR-039).

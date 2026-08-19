@@ -73,7 +73,7 @@ is explicitly out of scope and documented as a production concern.
 | **VIII** — Credible production path | Simplifications documented in ADRs | PASS | PASS — stateful-stream cost recorded; new ADRs listed below |
 | **IX** — Evidence over advocacy | Measurement method and invalidation stated | PASS | PASS — V7 defines the method before results exist |
 | **X** — Pipeline carries no policy | No tool logic, no schema copy, authenticated channel | **FAIL (pre-existing)** | PASS — bridge gains service credential + per-call binding |
-| **XI** — Provider choice is configuration | Both topologies behind one switch, measured | **FAIL (pre-existing)** | PASS — factory + `UCC_VOICE_MODE`, compared in V7 |
+| **XI** — Provider choice is configuration | Both topologies behind one switch, measured | **FAIL (pre-existing)** | PASS — factory + `UCC_PIPELINE_MODE`, compared in V7 |
 
 **Three pre-existing violations, all closed by this feature.** They are recorded as FAIL
 rather than N/A because the repository is in that state today: a voice service documented as
@@ -157,18 +157,26 @@ unit-tested without a websocket and the config can be validated without AWS.
 Ordered so each phase leaves the repository in a better state than it found it, and so the
 riskiest unknown is retired first.
 
-| Phase | Goal | Exit criterion |
-|---|---|---|
-| **A. Make it run** | Migrate to the 1.0.0 API, fix `requirements.txt`, decompose `bot.py`, add config with fail-fast | `import bot` succeeds; service starts; `/health` reports mode |
-| **B. Cascaded pipeline** | Transcribe → Bedrock → Polly behind the factory, tools wired through the bridge | A real call answers a public question (V3) |
-| **C. Close the bridge** | Service credential, per-call token, minting in TwiML, binding checks | V2 passes; unauthenticated and cross-case calls rejected |
-| **D. Protected data + escalation** | Verification and transfer over the voice leg | V4 and V5 pass on a real call |
-| **E. Speech-to-speech** | Nova Sonic behind the same factory | V6 passes with one config change and no code edit |
-| **F. Observability** | Metrics, observers, structured logging, redaction | V7 produces numbers; V9 is silent |
-| **G. Tests and docs** | pytest suite, TS bridge tests, ADRs, local-dev guide | V1 passes; report distinguishes executed from implemented |
+| Phase | Goal | Exit criterion | tasks.md |
+|---|---|---|---|
+| **A. Make it run** | Migrate to the 1.0.0 API, fix `requirements.txt`, decompose `bot.py`, add config with fail-fast | `import bot` succeeds; service starts; `/health` reports mode | Phases 1–2 |
+| **B. Cascaded pipeline** | Transcribe → Bedrock → Polly behind the factory, tools wired through the bridge | A real call answers a public question (V3) | Phase 3 (US1) |
+| **C. Close the bridge** | Service credential, per-call token, minting in TwiML, binding checks | V2 passes; unauthenticated and cross-case calls rejected | Phase 4 (US6) |
+| **D. Protected data + escalation** | Verification and transfer over the voice leg | V4 and V5 pass on a real call | Phases 5–6 (US2, US3) |
+| **E. Observability** | Metrics, observers, structured logging, redaction | V7 produces numbers; V9 is silent | Phase 7 (US5) |
+| **F. Speech-to-speech + comparison** | Nova Sonic behind the same factory, then measure both | V6 passes with one config change and no code edit | Phase 8 (US4) |
+| **G. Tests and docs** | pytest suite, TS bridge tests, ADRs, local-dev guide | V1 passes; report distinguishes executed from implemented | Phases 9–10 (US7, Polish) |
 
-Phase C deliberately precedes D. Once protected data flows over the voice leg, an open
-privileged channel stops being a documented gap and becomes a live exposure.
+Two orderings here are deliberate and neither follows story priority.
+
+**C precedes D.** Once protected data flows over the voice leg, an open privileged channel
+stops being a documented gap and becomes a live exposure.
+
+**E precedes F.** Speech-to-speech is the more exciting phase and the temptation is to reach
+for it first, but its whole justification is a latency comparison — and a comparison cannot
+be produced before the instrumentation that measures it exists. Building F first would mean
+either measuring it twice or reporting an impression instead of a number, which Principle IX
+forbids.
 
 ---
 

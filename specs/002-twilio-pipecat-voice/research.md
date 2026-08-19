@@ -163,7 +163,7 @@ observer that re-emits into the UCC structured-logging format with the correlati
 - `BaseObserver` sees every frame without being inserted into the pipeline, so measurement
   does not alter the thing measured.
 
-**What must still be written:** tool round-trip duration (FR-034), which is timed in the
+**What must still be written:** tool round-trip duration (FR-035), which is timed in the
 tool handler because it is a UCC round trip rather than a pipeline stage; and the mapping
 from Pipecat's loguru output into the repo's structured JSON with `uccCallId` on every line.
 
